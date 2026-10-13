@@ -44,20 +44,32 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    submodule pinned to `swf2es` and builds it as a workspace package in
    place of the npm `pixi.js` 8.21.0. All swf2es tests must pass with no
    change in output.
-2. **Fold the run-time patches into the source:**
-   - `GraphicsPipe`: whether a Graphics drawn alone needs its group rebuilt;
-     `execute` with the colour-transform shader;
-   - `RenderGroupSystem`: settling and unsettling groups (batched only once
-     a group stops changing);
-   - `Container` bounds: a filtered render group's bounds placed in its
-     parent's, and the walk that measures a filter's area;
-   - `FilterSystem`: `_findFilterResolution` safe after a resize,
-     `getBackTexture`, `destroy`;
-   - `FilterEffect.addBounds`, `RenderTargetSystem.copyToTexture`;
-   - `GpuGraphicsContext.reset`.
+2. **Fold the run-time patches into the source** (done). What was
+   Pixi's own behaviour is now changed here, each in a commit of its own
+   with a test: a Graphics drawn alone no longer rebuilds its render
+   group; `BatchTextureArray.clear` deletes; a nested filtered render
+   group's fast bounds are placed in its parent's; a filtered
+   descendant's padding counts in its ancestors' filter areas;
+   `_findFilterResolution` survives a resize; the filter system binds
+   an empty back texture of its own; a filter region stays on the
+   texels; `copyToTexture` is held to its texture and source;
+   `getBackTexture` rounds; multisampled targets resolve only where and
+   when read; tessellations kept as typed arrays; packed arrays of
+   contexts drawn alone let go of once uploaded; batchers and pools cut
+   back (`BatcherPipe.trim`, `Pool.trim`).
 
-   swf2es's `patches.ts` then disappears, and so do the private-field
-   casts around it.
+   What is swf2es's policy stays in swf2es and runs through extension
+   points added here, which `render/hooks.ts` sets there:
+   `GraphicsPipe.aloneDrawer` and `shaderFor`;
+   `BatcherPipe.batcherNameFor`, `batchersFor` and `takeBatchers`;
+   `GraphicsContextSystem.onContextBuilt`, `GpuGraphicsContext.onReset`
+   and `GraphicsPath.releaseInstructions`;
+   `RenderGroupSystem.onBuildInstructions`;
+   `FilterSystem.filterAreaHook`, `measureFilterArea` and `activeBounds`;
+   `fastGlobalBoundsHooks.onMask`; `GraphicsOptions.observeContext`;
+   `getContextRenderDataOnCpu`, `GlTextureSystem.bindForUpload` and
+   `GlBufferSystem.resizeOnNextUpload`. swf2es's `patches.ts` is gone,
+   and so are the overwritten methods and the private-field casts.
 3. **Strip what swf2es does not use.** Likely candidates are the WebGPU
    renderer, Pixi's text, its event system, accessibility and perhaps
    the Canvas renderer. Each one goes only after checking that nothing in
