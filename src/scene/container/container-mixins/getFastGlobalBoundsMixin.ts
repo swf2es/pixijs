@@ -48,6 +48,20 @@ export interface GetFastGlobalBoundsMixin
 }
 
 /**
+ * Extension points of the fast bounds walk (getFastGlobalBounds), for every container.
+ * @category scene
+ * @advanced
+ */
+export const fastGlobalBoundsHooks: {
+    /**
+     * Called for each container the walk measures that has a mask, which the walk does not bound its
+     * bounds by: for a renderer that keeps an area it measured, as swf2es keeps a filter's, and so must
+     * know when a mask may bound it as no change of what it measured tells.
+     */
+    onMask: ((container: Container) => void) | null;
+} = { onMask: null };
+
+/**
  * Mixin providing the implementation of the GetFastGlobalBoundsMixin interface.
  * It includes methods to compute and recursively calculate global bounds for containers.
  * @internal
@@ -91,6 +105,11 @@ export const getFastGlobalBoundsMixin: Partial<Container> = {
         if (this.localDisplayStatus !== 0b111 || (!this.measurable))
         {
             return;
+        }
+
+        if (fastGlobalBoundsHooks.onMask && this.mask)
+        {
+            fastGlobalBoundsHooks.onMask(this);
         }
 
         // Determine if effects need to be managed, requiring separate bounds handling.

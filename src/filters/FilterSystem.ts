@@ -168,6 +168,13 @@ export class FilterSystem implements System
     } as const;
 
     public readonly renderer: WebGLRenderer | WebGPURenderer;
+    /**
+     * Measures a filter instruction's area in place of the system's own measure, which it may call
+     * (measureFilterArea): for a renderer that keeps an area once measured to give it again, as swf2es
+     * keeps a filtered object's while only its place changes, or that measures some otherwise.
+     */
+    public filterAreaHook: ((instruction: FilterInstruction, bounds: Bounds, system: FilterSystem) => void) | null
+        = null;
 
     private _filterStackIndex = 0;
     private _filterStack: FilterData[] = [];
@@ -849,7 +856,14 @@ export class FilterSystem implements System
 
         try
         {
-            this._measureFilterArea(instruction, bounds);
+            if (this.filterAreaHook)
+            {
+                this.filterAreaHook(instruction, bounds, this);
+            }
+            else
+            {
+                this.measureFilterArea(instruction, bounds);
+            }
         }
         finally
         {
@@ -857,7 +871,14 @@ export class FilterSystem implements System
         }
     }
 
-    private _measureFilterArea(instruction: FilterInstruction, bounds: Bounds): void
+    /**
+     * Measures the area a filter instruction is applied to: the renderables', its filterArea, or the
+     * container's fast global bounds.
+     * @param instruction - The filter instruction
+     * @param bounds - The bounds object to populate
+     * @internal
+     */
+    public measureFilterArea(instruction: FilterInstruction, bounds: Bounds): void
     {
         // this path is used by the blend modes mostly!
         // they collect all renderables and push them into a list.

@@ -140,4 +140,27 @@ describe('FilterSystem', () =>
 
         renderer.destroy();
     });
+
+    it('should measure a filter\'s area with filterAreaHook, which may ask for its own measure', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const stage = new Container();
+        const outer = filtered();
+        const measured: Bounds[] = [];
+
+        stage.addChild(outer);
+        renderer.filter.filterAreaHook = (instruction, bounds, system) =>
+        {
+            expect(instruction.filterEffect._measuring).toBe(true);
+            system.measureFilterArea(instruction, bounds);
+            measured.push(bounds.clone());
+        };
+        renderer.render(stage);
+
+        // the outer filter's, then the inner's, by their shapes
+        expect(measured.map(({ minX, minY, maxX, maxY }) => [minX, minY, maxX, maxY]))
+            .toEqual([[10, 10, 30, 30], [10, 10, 30, 30]]);
+
+        renderer.destroy();
+    });
 });

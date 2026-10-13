@@ -1,6 +1,9 @@
+import '~/rendering/init';
+import { Graphics } from '../../graphics/shared/Graphics';
 import { RenderLayer } from '../../layers/RenderLayer';
 import { Bounds } from '../bounds/Bounds';
 import { Container } from '../Container';
+import { fastGlobalBoundsHooks } from '../container-mixins/getFastGlobalBoundsMixin';
 import { updateRenderGroupTransforms } from '../utils/updateRenderGroupTransforms';
 import { DummyEffect } from './DummyEffect';
 import { DummyView } from './DummyView';
@@ -399,5 +402,33 @@ describe('getFastGlobalBounds', () =>
         const bounds = front.getFastGlobalBounds(true);
 
         expect(bounds).toMatchObject({ minX: 0, minY: 0, maxX: 100, maxY: 100 });
+    });
+
+    it('should tell onMask of each masked container it measures', () =>
+    {
+        const root = new Container({ isRenderGroup: true, label: 'root' });
+        const masked = new Container({ label: 'masked' });
+        const mask = new Graphics({ label: 'mask' }).rect(0, 0, 10, 10).fill(0xffffff);
+        const hidden = new Container({ label: 'hidden', visible: false });
+        const seen: Container[] = [];
+
+        masked.addChild(new DummyView({ label: 'child' }));
+        masked.mask = mask;
+        hidden.mask = new Graphics({ label: 'hidden mask' }).rect(0, 0, 10, 10).fill(0xffffff);
+        root.addChild(masked, mask, hidden);
+        updateRenderGroupTransforms(root.renderGroup, true);
+
+        fastGlobalBoundsHooks.onMask = (container) => seen.push(container);
+
+        try
+        {
+            root.getFastGlobalBounds();
+        }
+        finally
+        {
+            fastGlobalBoundsHooks.onMask = null;
+        }
+
+        expect(seen).toEqual([masked]);
     });
 });
