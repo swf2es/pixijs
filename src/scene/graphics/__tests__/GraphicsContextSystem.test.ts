@@ -1,6 +1,7 @@
 import { Graphics } from '../shared/Graphics';
 import { GraphicsContext } from '../shared/GraphicsContext';
 import { GpuGraphicsContext } from '../shared/GraphicsContextSystem';
+import '../init';
 import { getWebGLRenderer } from '@test-utils';
 import { Texture } from '~/rendering/renderers/shared/texture/Texture';
 import { Container } from '~/scene/container/Container';
