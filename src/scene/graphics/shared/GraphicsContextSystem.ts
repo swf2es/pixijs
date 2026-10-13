@@ -296,9 +296,9 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
 
     /**
      * Runner postrender: lets go of the arrays of what this frame packed for contexts drawn alone, on
-     * WebGL. The batcher kept them for as long as the context lived, a copy of what the GPU holds (in a
-     * crowded swf2es scene some 41 MB of attributes and 33 MB of indices), read again only to upload
-     * them again once a lost context or the collection of unused buffers took the GPU's copy; that is
+     * WebGL. The batcher kept them for as long as the context lived, a copy of what the GPU holds, read
+     * again only to upload them again once a lost context or the collection of unused buffers took the
+     * GPU's copy; that is
      * now packed again from the context's tessellation, which is kept (getContextRenderData).
      * @ignore
      */
