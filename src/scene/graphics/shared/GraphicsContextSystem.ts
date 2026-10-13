@@ -3,6 +3,7 @@ import { getTextureBatchBindGroup } from '../../../rendering/batcher/gpu/getText
 import { type BatcherOptions } from '../../../rendering/batcher/shared/Batcher';
 import { DefaultBatcher } from '../../../rendering/batcher/shared/DefaultBatcher';
 import { InstructionSet } from '../../../rendering/renderers/shared/instructions/InstructionSet';
+import { Texture } from '../../../rendering/renderers/shared/texture/Texture';
 import { GCManagedHash } from '../../../utils/data/GCManagedHash';
 import { deprecation, v8_3_4 } from '../../../utils/logging/deprecation';
 import { BigPool } from '../../../utils/pool/PoolGroup';
@@ -14,11 +15,58 @@ import type { Renderer } from '../../../rendering/renderers/types';
 import type { BatchableGraphics } from './BatchableGraphics';
 import type { GraphicsContext } from './GraphicsContext';
 
-interface GeometryData
+/**
+ * A context's tessellation: arrays of numbers as it is built, kept as typed arrays once it has been
+ * (see compactGeometryData).
+ * @internal
+ */
+export interface GraphicsGeometryData
 {
-    vertices: number[];
-    uvs: number[];
-    indices: number[];
+    vertices: number[] | Float32Array | Float64Array;
+    uvs: number[] | Float32Array;
+    indices: number[] | Uint16Array | Uint32Array;
+}
+
+/** Shorter tessellations stay as they were built: a typed array costs some 100 bytes more than an array. */
+const COMPACT_LEAST = 64;
+/** Zeros, the UVs of every compacted context without a texture, grown to the largest's. */
+let zeros = new Float32Array(1024);
+
+/**
+ * Keeps a context's tessellation, once built, in typed arrays rather than the arrays of numbers it is
+ * built into: a crowded scene's heap held some 130 MB of them, half of it UVs, all zero for a fill
+ * without a texture. Positions become 32-bit floats for a context drawn alone, which are packed as
+ * they are, but 64-bit ones for a batched one, which are packed through its transform; UVs 32-bit
+ * floats, or a view of shared zeros for a context without a texture; indices 16-bit integers where
+ * the vertices are few enough. Only packing reads them, and a rebuild starts from new arrays (reset).
+ * @param gpuContext - The context's GPU data, just built.
+ */
+function compactGeometryData(gpuContext: GpuGraphicsContext): void
+{
+    const data = gpuContext.geometryData;
+
+    if (!Array.isArray(data.vertices) || data.vertices.length < COMPACT_LEAST) return;
+
+    const vertices = data.vertices;
+
+    data.vertices = gpuContext.isBatchable ? new Float64Array(vertices) : new Float32Array(vertices);
+
+    let white = true;
+
+    for (let i = 0; i < gpuContext.batches.length; i++)
+    {
+        white &&= gpuContext.batches[i].texture === Texture.WHITE;
+    }
+
+    const uvs = data.uvs.length;
+
+    if (white && zeros.length < uvs)
+    {
+        zeros = new Float32Array(Math.max(uvs, zeros.length * 2));
+    }
+
+    data.uvs = white ? zeros.subarray(0, uvs) : new Float32Array(data.uvs);
+    data.indices = vertices.length / 2 <= 0x10000 ? new Uint16Array(data.indices) : new Uint32Array(data.indices);
 }
 
 /**
@@ -32,7 +80,7 @@ export class GpuGraphicsContext implements GPUData
     public context: GraphicsContext;
 
     public batches: BatchableGraphics[] = [];
-    public geometryData: GeometryData = {
+    public geometryData: GraphicsGeometryData = {
         vertices: [],
         uvs: [],
         indices: [],
@@ -57,9 +105,22 @@ export class GpuGraphicsContext implements GPUData
         this.context = null;
 
         this.batches.length = 0;
-        this.geometryData.indices.length = 0;
-        this.geometryData.vertices.length = 0;
-        this.geometryData.uvs.length = 0;
+
+        const geometryData = this.geometryData;
+
+        // a compacted tessellation is given new arrays to be built into again
+        if (Array.isArray(geometryData.vertices))
+        {
+            (geometryData.indices as number[]).length = 0;
+            geometryData.vertices.length = 0;
+            (geometryData.uvs as number[]).length = 0;
+        }
+        else
+        {
+            geometryData.vertices = [];
+            geometryData.uvs = [];
+            geometryData.indices = [];
+        }
 
         this.graphicsData = null;
     }
@@ -214,6 +275,8 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
             {
                 gpuContext.isBatchable = true;
             }
+
+            compactGeometryData(gpuContext);
 
             context.dirty = false;
         }

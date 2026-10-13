@@ -242,9 +242,9 @@ export interface BatchableMeshElement extends BatchableElement
 
     /**
      * The vertex positions of the mesh.
-     * @type {number[] | Float32Array}
+     * @type {number[] | Float32Array | Float64Array}
      */
-    positions: number[] | Float32Array;
+    positions: number[] | Float32Array | Float64Array;
 
     /**
      * The indices of the mesh.

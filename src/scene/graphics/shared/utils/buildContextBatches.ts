@@ -43,7 +43,9 @@ const tempTextureMatrix = new Matrix();
  */
 export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGraphicsContext)
 {
-    const { geometryData, batches } = gpuContext;
+    const batches = gpuContext.batches;
+    // arrays: a context built before is reset first, which gives a compacted tessellation new ones
+    const geometryData = gpuContext.geometryData as { vertices: number[]; uvs: number[]; indices: number[]; };
 
     // reset them..
     batches.length = 0;

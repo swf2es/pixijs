@@ -6,6 +6,7 @@ import type { DefaultBatchableMeshElement } from '../../../rendering/batcher/sha
 import type { Topology } from '../../../rendering/renderers/shared/geometry/const';
 import type { Texture } from '../../../rendering/renderers/shared/texture/Texture';
 import type { Graphics } from './Graphics';
+import type { GraphicsGeometryData } from './GraphicsContextSystem';
 
 const identityMatrix = new Matrix();
 
@@ -37,7 +38,7 @@ export class BatchableGraphics implements DefaultBatchableMeshElement
     public _batcher: Batcher = null;
     public _batch: Batch = null;
 
-    public geometryData: { vertices: number[]; uvs: number[]; indices: number[]; };
+    public geometryData: GraphicsGeometryData;
 
     get uvs()
     {
