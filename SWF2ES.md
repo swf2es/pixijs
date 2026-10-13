@@ -109,6 +109,31 @@ Fixes like those are kept in commits of their own, with a test, so that
 they can be offered to pixijs/pixijs. The maintainers of swf2es open
 those pull requests themselves.
 
+The candidates from step 2, and what to take with them:
+
+- `ea897df18` a Graphics drawn alone keeps its group's build;
+  `5bf63284d` `BatchTextureArray.clear`; `87589b246`
+  `_findFilterResolution`; `2118d1e1f` nested render group bounds;
+  `077e25003` the filter system's own empty back texture;
+  `5f4a9436f` `copyToTexture`'s clamp; `3da417e92` batcher trim;
+  `36cf27b76` `Pool.trim`. Each stands alone.
+- `1712961d9` (`getBackTexture` rounding) goes with `67101e417`
+  (the region on the texels): each fixes half of the same drift.
+- `36456dae8` (typed tessellations) goes with `63648551c`, which adds the
+  import its test needs when run alone; `ecee5cb81` (packed arrays let
+  go of) goes after both.
+- `2d2f3a656` (a filtered child's padding in an ancestor's filter area)
+  goes only with `65bdc2ded`, which keeps it to the filter system's
+  measure; on its own it changes every filtered container's bounds.
+  The behaviour is Flash Player's layer, so offer it as an option, if
+  at all.
+- `81e1ceadb` (multisampled targets resolved only where and when read)
+  is the riskiest: it changes when every WebGL renderer resolves, and
+  relies on nothing reading the back buffer before it is presented but
+  copies out of it.
+- The tests several commits add to `src/filters/__tests__/FilterSystem.test.ts`
+  conflict with each other, trivially, when a commit is applied alone.
+
 ## Working on the fork
 
 - `swf2es` only moves forward; it is never rebased, since swf2es pins
