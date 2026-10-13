@@ -260,7 +260,8 @@ describe('Graphics', () =>
 
             renderer.render(graphics);
 
-            const graphicsData = graphics.context._gpuData[renderer.uid].graphicsData;
+            // the frame let go of the arrays it uploaded: what they held, packed again
+            const graphicsData = renderer.graphicsContext.getContextRenderDataOnCpu(graphics.context);
 
             expect(graphicsData.batcher.geometry.indexBuffer.data.length).toEqual(3 * 6);
             expect(graphicsData.batcher.geometry.buffers[0].data.length).toEqual(3 * 4 * 6);

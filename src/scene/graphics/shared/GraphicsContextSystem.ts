@@ -4,12 +4,16 @@ import { type BatcherOptions } from '../../../rendering/batcher/shared/Batcher';
 import { DefaultBatcher } from '../../../rendering/batcher/shared/DefaultBatcher';
 import { InstructionSet } from '../../../rendering/renderers/shared/instructions/InstructionSet';
 import { Texture } from '../../../rendering/renderers/shared/texture/Texture';
+import { RendererType } from '../../../rendering/renderers/types';
 import { GCManagedHash } from '../../../utils/data/GCManagedHash';
+import { ViewableBuffer } from '../../../utils/data/ViewableBuffer';
 import { deprecation, v8_3_4 } from '../../../utils/logging/deprecation';
 import { BigPool } from '../../../utils/pool/PoolGroup';
 import { type GPUData } from '../../view/ViewContainer';
 import { buildContextBatches } from './utils/buildContextBatches';
 
+import type { GlBuffer } from '../../../rendering/renderers/gl/buffer/GlBuffer';
+import type { Buffer } from '../../../rendering/renderers/shared/buffer/Buffer';
 import type { System } from '../../../rendering/renderers/shared/system/System';
 import type { Renderer } from '../../../rendering/renderers/types';
 import type { BatchableGraphics } from './BatchableGraphics';
@@ -142,6 +146,12 @@ export class GraphicsContextRenderData
 {
     public batcher: DefaultBatcher;
     public instructions = new InstructionSet();
+    /**
+     * Whether the batcher's arrays were let go of once uploaded, the GPU's buffers alone holding what
+     * it packed (see GraphicsContextSystem.postrender).
+     * @internal
+     */
+    public _dropped = false;
 
     public init(options: BatcherOptions)
     {
@@ -213,6 +223,8 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
 
     private readonly _renderer: Renderer;
     private readonly _managedContexts: GCManagedHash<GraphicsContext>;
+    /** The render data packed since the last frame ended, whose arrays are let go of then. */
+    private readonly _packed: GpuGraphicsContext[] = [];
 
     constructor(renderer: Renderer)
     {
@@ -237,7 +249,64 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
      */
     public getContextRenderData(context: GraphicsContext): GraphicsContextRenderData
     {
-        return context._gpuData[this._renderer.uid].graphicsData || this._initContextRenderData(context);
+        const gpuContext = context._gpuData[this._renderer.uid];
+        const graphicsData = gpuContext?.graphicsData;
+
+        // packed again from the context's tessellation, as it first was, once the GPU lost its copy
+        if (graphicsData?._dropped && !this._isResident(graphicsData))
+        {
+            this._repack(gpuContext);
+        }
+
+        return gpuContext.graphicsData || this._initContextRenderData(context);
+    }
+
+    /**
+     * Returns the render data for a given GraphicsContext with what it packed on the CPU, packed again
+     * if its arrays were let go of: for what reads them rather than drawing from the GPU's copy.
+     * @param context - The GraphicsContext to get the render data for.
+     * @internal
+     */
+    public getContextRenderDataOnCpu(context: GraphicsContext): GraphicsContextRenderData
+    {
+        const gpuContext = context._gpuData[this._renderer.uid];
+
+        if (gpuContext?.graphicsData?._dropped)
+        {
+            this._repack(gpuContext);
+        }
+
+        return this.getContextRenderData(context);
+    }
+
+    /**
+     * Runner postrender: lets go of the arrays of what this frame packed for contexts drawn alone, on
+     * WebGL. The batcher kept them for as long as the context lived, a copy of what the GPU holds (in a
+     * crowded swf2es scene some 41 MB of attributes and 33 MB of indices), read again only to upload
+     * them again once a lost context or the collection of unused buffers took the GPU's copy; that is
+     * now packed again from the context's tessellation, which is kept (getContextRenderData).
+     * @ignore
+     */
+    public postrender(): void
+    {
+        const packed = this._packed;
+
+        for (let i = 0; i < packed.length; i++)
+        {
+            const graphicsData = packed[i].graphicsData;
+            const batcher = graphicsData?.batcher;
+
+            if (!batcher || graphicsData._dropped) continue;
+
+            batcher.attributeBuffer.destroy();
+            batcher.attributeBuffer = new ViewableBuffer(0);
+            batcher.indexBuffer = new (batcher.indexBuffer.constructor as Uint16ArrayConstructor)(0);
+            batcher.geometry.buffers[0]._releaseData(batcher.attributeBuffer.float32View);
+            batcher.geometry.indexBuffer._releaseData(batcher.indexBuffer);
+            graphicsData._dropped = true;
+        }
+
+        packed.length = 0;
     }
 
     /**
@@ -306,6 +375,12 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
         const { batches, geometryData } = gpuContext;
 
         gpuContext.graphicsData = graphicsData;
+        graphicsData._dropped = false;
+
+        if (this._renderer.type === RendererType.WEBGL)
+        {
+            this._packed.push(gpuContext);
+        }
 
         const vertexSize = geometryData.vertices.length;
         const indexSize = geometryData.indices.length;
@@ -354,6 +429,37 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
         }
 
         return graphicsData;
+    }
+
+    /**
+     * Whether the GPU holds what the render data packed: its buffers there, and up to date.
+     * @param graphicsData - The render data.
+     */
+    private _isResident(graphicsData: GraphicsContextRenderData): boolean
+    {
+        const geometry = graphicsData.batcher?.geometry;
+
+        return !!geometry
+            && this._isUploaded(geometry.buffers[0])
+            && this._isUploaded(geometry.indexBuffer);
+    }
+
+    private _isUploaded(buffer: Buffer): boolean
+    {
+        const glBuffer = buffer._gpuData[this._renderer.uid] as GlBuffer;
+
+        return !!glBuffer?.buffer && glBuffer.updateID === buffer._updateID;
+    }
+
+    /**
+     * Has the context packed again into new render data, as it was as it first drew.
+     * @param gpuContext - The context's GPU data.
+     */
+    private _repack(gpuContext: GpuGraphicsContext): void
+    {
+        gpuContext.graphicsData._dropped = false;
+        BigPool.return(gpuContext.graphicsData);
+        gpuContext.graphicsData = null;
     }
 
     private _initContext(context: GraphicsContext): GpuGraphicsContext

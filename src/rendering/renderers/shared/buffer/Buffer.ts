@@ -246,6 +246,19 @@ export class Buffer extends EventEmitter<{
     }
 
     /**
+     * Lets go of the CPU's copy of the data, which becomes `empty`, without a change or an update the GPU
+     * would act on: for data the GPU already holds, and that is made again from its source rather than
+     * uploaded from here again. `empty` keeps the type of the data, which a draw reads the index type from.
+     * @param empty - an empty array of the data's type
+     * @internal
+     */
+    public _releaseData(empty: TypedArray): void
+    {
+        this._data = empty;
+        this._dataInt32 = null;
+    }
+
+    /**
      * Sets the data in the buffer to the given value. This will immediately update the buffer on the GPU.
      * If you only want to update a subset of the buffer, you can pass in the size of the data.
      * @param value - the data to set

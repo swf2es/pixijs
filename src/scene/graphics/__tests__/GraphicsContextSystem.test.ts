@@ -1,8 +1,10 @@
+import { Graphics } from '../shared/Graphics';
 import { GraphicsContext } from '../shared/GraphicsContext';
 import { getWebGLRenderer } from '@test-utils';
 import { Texture } from '~/rendering/renderers/shared/texture/Texture';
+import { Container } from '~/scene/container/Container';
 
-import type { GraphicsGeometryData } from '../shared/GraphicsContextSystem';
+import type { GraphicsContextRenderData, GraphicsGeometryData } from '../shared/GraphicsContextSystem';
 
 /**
  * A star of `points` points, many enough to be compacted.
@@ -85,6 +87,54 @@ describe('GraphicsContextSystem', () =>
         const gpuContext = renderer.graphicsContext.updateGpuContext(star(3, 'no-batch'));
 
         expect(Array.isArray(gpuContext.geometryData.vertices)).toBe(true);
+
+        renderer.destroy();
+    });
+
+    it('should let go of what a frame packed as it ends, and pack it again once the GPU loses it', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const contexts = renderer.graphicsContext;
+        const context = star(40, 'no-batch');
+        const stage = new Container();
+        const packing = (data: GraphicsContextRenderData) => ({
+            attributes: Array.from(data.batcher.attributeBuffer.float32View.subarray(0, data.batcher.attributeSize)),
+            indices: Array.from(data.batcher.indexBuffer.subarray(0, data.batcher.indexSize)),
+        });
+
+        stage.addChild(new Graphics(context));
+        contexts.updateGpuContext(context);
+
+        const data = contexts.getContextRenderData(context);
+        const packed = packing(data);
+        const type = data.batcher.indexBuffer.constructor;
+
+        // drawn, and so uploaded, and the frame ended
+        renderer.render(stage);
+
+        expect(data._dropped).toBe(true);
+        expect(data.batcher.attributeBuffer.float32View).toHaveLength(0);
+        expect(data.batcher.indexBuffer).toHaveLength(0);
+        expect(data.batcher.indexBuffer.constructor).toBe(type);
+        expect(data.batcher.geometry.indexBuffer.data).toBe(data.batcher.indexBuffer);
+        expect(contexts.getContextRenderData(context)).toBe(data);
+
+        // drawn again from the GPU's copy
+        renderer.render(stage);
+        expect(contexts.getContextRenderData(context)).toBe(data);
+
+        // the GPU's copy gone, as a lost context leaves it: packed again, the same
+        data.batcher.geometry.buffers[0]._gpuData[renderer.uid] = null;
+
+        const again = contexts.getContextRenderData(context);
+
+        expect(again._dropped).toBe(false);
+        expect(packing(again)).toEqual(packed);
+
+        // and on the CPU though the GPU holds it, for what reads the arrays
+        renderer.render(stage);
+        expect(again._dropped).toBe(true);
+        expect(packing(contexts.getContextRenderDataOnCpu(context))).toEqual(packed);
 
         renderer.destroy();
     });
