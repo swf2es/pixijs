@@ -61,6 +61,21 @@ export class GraphicsPath
     public checkForHoles: boolean;
 
     /**
+     * Lets go of the path's commands once it has been flattened to shapes, which is all a built context
+     * reads of it again: to measure its bounds, to hit test it and to build it again. For a path that
+     * never changes again; one changed after is flattened again from the commands it has left.
+     * @returns Whether it let go of them.
+     */
+    public releaseInstructions(): boolean
+    {
+        if (!this._shapePath || this._dirty || this.instructions.length === 0) return false;
+
+        this.instructions = [];
+
+        return true;
+    }
+
+    /**
      * Provides access to the internal shape path, ensuring it is up-to-date with the current instructions.
      * @returns The `ShapePath` instance associated with this `GraphicsPath`.
      */
