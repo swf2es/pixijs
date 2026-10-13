@@ -214,6 +214,16 @@ export class FilterSystem implements System
     }
 
     /**
+     * The bounds of the currently active filter, in the space of the render surface it is drawn to: where
+     * its input texture's corner lies.
+     * @readonly
+     */
+    public get activeBounds(): Bounds | undefined
+    {
+        return this._activeFilterData?.bounds;
+    }
+
+    /**
      * Pushes a filter instruction onto the filter stack.
      * @param instruction - The instruction containing the filter effect and container.
      * @internal

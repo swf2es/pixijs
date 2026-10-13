@@ -163,4 +163,27 @@ describe('FilterSystem', () =>
 
         renderer.destroy();
     });
+
+    it('should give the active filter\'s bounds as it applies', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const stage = new Container();
+        const outer = filtered();
+        const filter = outer.filters[0];
+        const seen: number[][] = [];
+
+        filter.apply = (system, input, output, clear) =>
+        {
+            const { minX, minY, maxX, maxY } = system.activeBounds;
+
+            seen.push([minX, minY, maxX, maxY]);
+            system.applyFilter(filter, input, output, clear);
+        };
+        stage.addChild(outer);
+        renderer.render(stage);
+
+        expect(seen).toEqual([[10, 10, 30, 30]]);
+
+        renderer.destroy();
+    });
 });
