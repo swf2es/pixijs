@@ -903,33 +903,34 @@ export class RenderTargetSystem<RENDER_TARGET extends RendererRenderTarget> impl
         // a texture or canvas source is copied from its render target's framebuffer
         const sourceRenderTarget = this.getRenderTarget(sourceRenderSurface);
 
-        // fit the size to the source we don't want to go out of bounds
+        // Fit the copy to both the destination and the source. The destination may be a pixel smaller
+        // than the size asked for, as a pooled texture is sized with a hair of tolerance for rounding,
+        // which GL refuses (copyTexSubImage2D's offset overflow); and a region at or past the source's
+        // edge would leave a width or height below zero, which GL refuses and WebGPU fails its frame
+        // for. What the copy does not reach is left as the destination had it.
+        const { pixelWidth, pixelHeight } = destinationTexture.source;
+        const reachX = Math.min(originDest.x + size.width, pixelWidth);
+        const reachY = Math.min(originDest.y + size.height, pixelHeight);
+        const skipX = Math.max(0, -originSrc.x, -originDest.x);
+        const skipY = Math.max(0, -originSrc.y, -originDest.y);
+        const x = originSrc.x + skipX;
+        const y = originSrc.y + skipY;
+        const toX = originDest.x + skipX;
+        const toY = originDest.y + skipY;
+        const width = Math.min(reachX - toX, sourceRenderTarget.pixelWidth - x);
+        const height = Math.min(reachY - toY, sourceRenderTarget.pixelHeight - y);
 
-        if (originSrc.x < 0)
+        if (width <= 0 || height <= 0)
         {
-            size.width += originSrc.x;
-            originDest.x -= originSrc.x;
-            originSrc.x = 0;
+            return destinationTexture;
         }
-
-        if (originSrc.y < 0)
-        {
-            size.height += originSrc.y;
-            originDest.y -= originSrc.y;
-            originSrc.y = 0;
-        }
-
-        const { pixelWidth, pixelHeight } = sourceRenderTarget;
-
-        size.width = Math.min(size.width, pixelWidth - originSrc.x);
-        size.height = Math.min(size.height, pixelHeight - originSrc.y);
 
         return this.adaptor.copyToTexture(
             sourceRenderTarget,
             destinationTexture,
-            originSrc,
-            size,
-            originDest
+            { x, y },
+            { width, height },
+            { x: toX, y: toY },
         );
     }
 

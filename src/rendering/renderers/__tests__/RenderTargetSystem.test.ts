@@ -939,3 +939,49 @@ describe('copyDepthTexture argument safety', () =>
         expect(originDest).toEqual({ x: 0, y: 0 });
     });
 });
+
+describe('copyToTexture clamping', () =>
+{
+    function copied(originSrc: { x: number; y: number }, size: { width: number; height: number },
+        destinationSize = 16)
+    {
+        const glRenderer = renderer as WebGLRenderer;
+        const source = createTarget({ width: 32, height: 32 });
+        const destination = new Texture({
+            source: new TextureSource({ width: destinationSize, height: destinationSize }),
+        });
+        const spy = jest.spyOn(glRenderer.renderTarget.adaptor, 'copyToTexture');
+
+        glRenderer.renderTarget.copyToTexture(source, destination, originSrc, size, { x: 0, y: 0 });
+
+        const calls = spy.mock.calls.map((call) => call.slice(2));
+
+        spy.mockRestore();
+
+        return calls;
+    }
+
+    it('should fit the copy to the destination texture', async () =>
+    {
+        renderer = await getWebGLRenderer({ width: 64, height: 64 });
+
+        expect(copied({ x: 4, y: 4 }, { width: 17, height: 17 }))
+            .toEqual([[{ x: 4, y: 4 }, { width: 16, height: 16 }, { x: 0, y: 0 }]]);
+    });
+
+    it('should fit the copy to the source past its edges', async () =>
+    {
+        renderer = await getWebGLRenderer({ width: 64, height: 64 });
+
+        expect(copied({ x: -4, y: 24 }, { width: 16, height: 16 }))
+            .toEqual([[{ x: 0, y: 24 }, { width: 12, height: 8 }, { x: 4, y: 0 }]]);
+    });
+
+    it('should copy nothing for a region wholly past the source', async () =>
+    {
+        renderer = await getWebGLRenderer({ width: 64, height: 64 });
+
+        expect(copied({ x: 40, y: 0 }, { width: 16, height: 16 })).toEqual([]);
+        expect(copied({ x: -20, y: 0 }, { width: 16, height: 16 })).toEqual([]);
+    });
+});
