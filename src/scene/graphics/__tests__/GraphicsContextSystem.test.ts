@@ -1,5 +1,6 @@
 import { Graphics } from '../shared/Graphics';
 import { GraphicsContext } from '../shared/GraphicsContext';
+import { GpuGraphicsContext } from '../shared/GraphicsContextSystem';
 import { getWebGLRenderer } from '@test-utils';
 import { Texture } from '~/rendering/renderers/shared/texture/Texture';
 import { Container } from '~/scene/container/Container';
@@ -135,6 +136,39 @@ describe('GraphicsContextSystem', () =>
         renderer.render(stage);
         expect(again._dropped).toBe(true);
         expect(packing(contexts.getContextRenderDataOnCpu(context))).toEqual(packed);
+
+        renderer.destroy();
+    });
+
+    it('should tell onContextBuilt of each build, and onReset of each reset', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const contexts = renderer.graphicsContext;
+        const context = star(3, 'no-batch');
+        const built: [GraphicsContext, GpuGraphicsContext][] = [];
+        // each reset, with the batches it still had
+        const reset: [GpuGraphicsContext, number][] = [];
+
+        contexts.onContextBuilt = (c, gpuContext) => built.push([c, gpuContext]);
+        GpuGraphicsContext.onReset = (gpuContext) => reset.push([gpuContext, gpuContext.batches.length]);
+
+        try
+        {
+            const gpuContext = contexts.updateGpuContext(context);
+
+            contexts.updateGpuContext(context);
+            expect(built).toEqual([[context, gpuContext]]);
+            expect(reset).toEqual([]);
+
+            context.dirty = true;
+            contexts.updateGpuContext(context);
+            expect(built).toHaveLength(2);
+            expect(reset).toEqual([[gpuContext, 1]]);
+        }
+        finally
+        {
+            GpuGraphicsContext.onReset = null;
+        }
 
         renderer.destroy();
     });

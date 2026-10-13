@@ -80,6 +80,13 @@ function compactGeometryData(gpuContext: GpuGraphicsContext): void
  */
 export class GpuGraphicsContext implements GPUData
 {
+    /**
+     * Called as any GpuGraphicsContext is reset, as its context is built again or destroyed, before it
+     * lets go of anything: for a renderer that keeps something of each context's geometry elsewhere, as
+     * swf2es's transform table keeps it in an atlas.
+     */
+    public static onReset: ((gpuContext: GpuGraphicsContext) => void) | null = null;
+
     public isBatchable: boolean;
     public context: GraphicsContext;
 
@@ -93,6 +100,8 @@ export class GpuGraphicsContext implements GPUData
 
     public reset()
     {
+        GpuGraphicsContext.onReset?.(this);
+
         if (this.batches)
         {
             this.batches.forEach((batch) =>
@@ -223,6 +232,12 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
 
     private readonly _renderer: Renderer;
     private readonly _managedContexts: GCManagedHash<GraphicsContext>;
+    /**
+     * Called as a context has just been built, for a renderer that lets go of what it no longer reads of
+     * a context once built: swf2es drops its paths' commands, as its contexts never change after.
+     */
+    public onContextBuilt: ((context: GraphicsContext, gpuContext: GpuGraphicsContext) => void) | null = null;
+
     /** The render data packed since the last frame ended, whose arrays are let go of then. */
     private readonly _packed: GpuGraphicsContext[] = [];
 
@@ -348,6 +363,8 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
             compactGeometryData(gpuContext);
 
             context.dirty = false;
+
+            this.onContextBuilt?.(context, gpuContext);
         }
 
         return gpuContext;
