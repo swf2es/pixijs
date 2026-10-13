@@ -65,6 +65,18 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
 
     public static _availableBatchers: Record<string, new (options: BatcherOptions) => Batcher> = Object.create(null);
 
+    /**
+     * Called as a build starts for an instruction set that has no batchers yet, to give it some, as
+     * taken from a set that went (takeBatchers), rather than have new ones made; none from undefined.
+     */
+    public batchersFor: ((instructionSet: InstructionSet) => Record<string, Batcher> | undefined) | null = null;
+
+    /**
+     * Names the batcher an element is added to, in place of its own batcherName: for a renderer that
+     * picks a batcher by what draws the element rather than by its kind.
+     */
+    public batcherNameFor: ((element: BatchableElement) => string) | null = null;
+
     /** When each batcher was first seen using under a quarter of its buffers, since it last used more. */
     private readonly _lowSince = new WeakMap<Batcher, number>();
 
@@ -87,7 +99,8 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
 
         if (!batchers)
         {
-            batchers = this._batchersByInstructionSet[instructionSet.uid] = Object.create(null);
+            batchers = this._batchersByInstructionSet[instructionSet.uid] = this.batchersFor?.(instructionSet)
+                ?? Object.create(null);
             batchers.default ||= new DefaultBatcher({
                 maxTextures: this.renderer.limits.maxBatchableTextures,
             });
@@ -105,16 +118,18 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
 
     public addToBatch(batchableObject: BatchableElement, instructionSet: InstructionSet)
     {
-        if (this._activeBatch.name !== batchableObject.batcherName)
+        const batcherName = this.batcherNameFor ? this.batcherNameFor(batchableObject) : batchableObject.batcherName;
+
+        if (this._activeBatch.name !== batcherName)
         {
             this._activeBatch.break(instructionSet);
 
-            let batch = this._activeBatches[batchableObject.batcherName];
+            let batch = this._activeBatches[batcherName];
 
             if (!batch)
             {
-                batch = this._activeBatches[batchableObject.batcherName]
-                    = BatcherPipe.getBatcher(batchableObject.batcherName, this.renderer.limits.maxBatchableTextures);
+                batch = this._activeBatches[batcherName]
+                    = BatcherPipe.getBatcher(batcherName, this.renderer.limits.maxBatchableTextures);
                 batch.begin();
             }
 
@@ -176,6 +191,21 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
         }
 
         this._adaptor.execute(this, batch);
+    }
+
+    /**
+     * Takes the batchers kept for an instruction set out of the pipe, which keeps them by the set's uid
+     * until the set is destroyed: for another set to build with (batchersFor), or to destroy.
+     * @param instructionSetUid - the uid of the instruction set
+     * @returns the batchers, by name, or undefined where the set has none
+     */
+    public takeBatchers(instructionSetUid: number): Record<string, Batcher> | undefined
+    {
+        const batchers = this._batchersByInstructionSet[instructionSetUid];
+
+        delete this._batchersByInstructionSet[instructionSetUid];
+
+        return batchers;
     }
 
     /**

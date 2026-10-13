@@ -1,8 +1,11 @@
+import { BatcherPipe as BatcherPipeClass } from '../shared/BatcherPipe';
+import { DefaultBatcher } from '../shared/DefaultBatcher';
 import { getWebGLRenderer } from '@test-utils';
 import { Texture } from '~/rendering/renderers/shared/texture/Texture';
 import { Container } from '~/scene/container/Container';
 import { Sprite } from '~/scene/sprite/Sprite';
 
+import type { BatchableElement } from '../shared/Batcher';
 import type { BatcherPipe } from '../shared/BatcherPipe';
 import type { WebGLRenderer } from '~/rendering/renderers/gl/WebGLRenderer';
 
@@ -92,6 +95,61 @@ describe('BatcherPipe', () =>
         batchPipe.trim(5000);
         expect(batcher.attributeBuffer.size).toBe(held);
 
+        renderer.destroy();
+    });
+
+    it('should give a new instruction set the batchers taken from one that went', async () =>
+    {
+        const renderer = (await getWebGLRenderer()) as WebGLRenderer;
+        const batchPipe = renderer.renderPipes.batch as unknown as BatcherPipe;
+        const cache = batchPipe['_batchersByInstructionSet'];
+        const first = new Container({ isRenderGroup: true });
+
+        first.addChild(new Sprite(Texture.WHITE));
+        renderer.render(first);
+
+        const taken = batchPipe.takeBatchers(first.renderGroup.instructionSet.uid);
+
+        expect(taken.default).toBeInstanceOf(DefaultBatcher);
+        expect(cache[first.renderGroup.instructionSet.uid]).toBeUndefined();
+
+        const second = new Container({ isRenderGroup: true });
+
+        second.addChild(new Sprite(Texture.WHITE));
+        batchPipe.batchersFor = () => taken;
+        renderer.render(second);
+
+        expect(cache[second.renderGroup.instructionSet.uid]).toBe(taken);
+
+        renderer.destroy();
+    });
+
+    it('should add an element to the batcher batcherNameFor names', async () =>
+    {
+        class TintedBatcher extends DefaultBatcher
+        {
+            public override name = 'tinted' as 'default';
+        }
+
+        BatcherPipeClass._availableBatchers.tinted = TintedBatcher;
+
+        const renderer = (await getWebGLRenderer()) as WebGLRenderer;
+        const batchPipe = renderer.renderPipes.batch as unknown as BatcherPipe;
+        const container = new Container({ isRenderGroup: true });
+        const tinted = new Sprite({ texture: Texture.WHITE, label: 'tinted' });
+
+        container.addChild(new Sprite(Texture.WHITE), tinted);
+        batchPipe.batcherNameFor = (element: BatchableElement & { renderable?: Container }) =>
+            (element.renderable?.label === 'tinted' ? 'tinted' : element.batcherName);
+        renderer.render(container);
+
+        const batchers = batchPipe['_batchersByInstructionSet'][container.renderGroup.instructionSet.uid];
+
+        expect(batchers.tinted).toBeInstanceOf(TintedBatcher);
+        expect(batchers.tinted.batchIndex).toBe(1);
+        expect(batchers.default.batchIndex).toBe(1);
+
+        delete BatcherPipeClass._availableBatchers.tinted;
         renderer.destroy();
     });
 });
