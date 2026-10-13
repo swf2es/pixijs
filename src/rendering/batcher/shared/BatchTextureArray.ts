@@ -30,7 +30,9 @@ export class BatchTextureArray
             const t = this.textures[i];
 
             this.textures[i] = null;
-            this.ids[t.uid] = null;
+            // deleted, not set to null: a pooled array would otherwise keep a key for every
+            // texture it was ever given
+            delete this.ids[t.uid];
         }
 
         this.count = 0;
