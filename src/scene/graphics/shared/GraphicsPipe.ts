@@ -34,6 +34,7 @@ export interface GraphicsAdaptor
 export class GraphicsGpuData implements GPUData
 {
     public batches: BatchableGraphics[] = [];
+    /** Whether the last build batched the Graphics, rather than giving it an instruction of its own. */
     public batched = false;
     public destroy()
     {
@@ -82,18 +83,16 @@ export class GraphicsPipe implements RenderPipe<Graphics>
         // assume context is dirty..
         const context = graphics.context;
 
-        const wasBatched = !!graphics._gpuData;
-
         const contextSystem = this.renderer.graphicsContext as GraphicsContextSystem;
         const gpuContext = contextSystem.updateGpuContext(context);
 
-        if (gpuContext.isBatchable || wasBatched !== gpuContext.isBatchable)
-        {
-            // TODO what if they are the same size??
-            return true;
-        }
+        // A Graphics the last build drew alone, and still to be drawn alone, keeps its instruction,
+        // which draws whatever context it has as it runs: its render group needs no rebuild. Asking
+        // whether it has GPU data at all, as every Graphics drawn once has, rebuilt the group each
+        // time a Graphics drawn alone changed or swapped its context.
+        const gpuData = graphics._gpuData[this.renderer.uid];
 
-        return false;
+        return gpuContext.isBatchable || gpuData?.batched !== false;
     }
 
     public addRenderable(graphics: Graphics, instructionSet: InstructionSet)
@@ -117,6 +116,13 @@ export class GraphicsPipe implements RenderPipe<Graphics>
         {
             this.renderer.renderPipes.batch.break(instructionSet);
             instructionSet.add(graphics);
+        }
+
+        const gpuData = graphics._gpuData[this.renderer.uid];
+
+        if (gpuData)
+        {
+            gpuData.batched = gpuContext.isBatchable;
         }
     }
 
