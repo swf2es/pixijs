@@ -62,10 +62,13 @@ export class GlGraphicsAdaptor implements GraphicsAdaptor
         });
     }
 
-    public execute(graphicsPipe: GraphicsPipeLike, renderable: Graphics): void
+    public execute(
+        graphicsPipe: GraphicsPipeLike,
+        renderable: Graphics,
+        shader: Shader = renderable.context.customShader || this.shader,
+    ): void
     {
         const context = renderable.context;
-        const shader = context.customShader || this.shader;
         const renderer = graphicsPipe.renderer as WebGLRenderer;
         const contextSystem = renderer.graphicsContext as GraphicsContextSystem;
 

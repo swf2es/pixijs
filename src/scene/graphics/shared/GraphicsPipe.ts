@@ -26,7 +26,8 @@ export interface GraphicsAdaptor
 {
     shader: Shader;
     contextChange(renderer: Renderer): void;
-    execute(graphicsPipe: GraphicsPipeLike, renderable: Graphics): void;
+    /** Draws the renderable with `shader`, if given, else its context's customShader or the adaptor's own. */
+    execute(graphicsPipe: GraphicsPipeLike, renderable: Graphics, shader?: Shader): void;
     destroy(): void;
 }
 
@@ -47,6 +48,19 @@ export class GraphicsGpuData implements GPUData
     }
 }
 
+/**
+ * Draws the Graphics a GraphicsPipe would give an instruction of their own, those of a context that is
+ * not batched, in its place while it is active (see GraphicsPipe.aloneDrawer).
+ * @internal
+ */
+export interface GraphicsAloneDrawer
+{
+    /** Whether it draws them now; otherwise the pipe does. */
+    readonly active: boolean;
+    /** Adds the Graphics to the instruction set, which the batch has just been broken in. */
+    add(graphics: Graphics, instructionSet: InstructionSet): void;
+}
+
 /** @internal */
 export class GraphicsPipe implements RenderPipe<Graphics>
 {
@@ -61,6 +75,19 @@ export class GraphicsPipe implements RenderPipe<Graphics>
 
     public renderer: Renderer;
     public state: State = State.for2d();
+    /**
+     * Draws the Graphics this pipe would give an instruction of their own, while it is active: for a
+     * renderer that draws them its own way, as swf2es's transform table draws runs of them in a few
+     * calls. Each still has its GPU data rebuilt here as it changes.
+     */
+    public aloneDrawer: GraphicsAloneDrawer | null = null;
+    /**
+     * Gives the shader a Graphics drawn alone is drawn with, in place of the adaptor's own, or null for
+     * that; a context's customShader comes first. Called as each is drawn, which sets the shader's
+     * local uniforms after: for a renderer that draws some Graphics with a shader of its own, as
+     * swf2es draws one under a Flash colour transform.
+     */
+    public shaderFor: ((graphics: Graphics) => Shader | null) | null = null;
 
     private _adaptor: GraphicsAdaptor;
     private readonly _managedGraphics: GCManagedHash<Graphics>;
@@ -115,7 +142,15 @@ export class GraphicsPipe implements RenderPipe<Graphics>
         else
         {
             this.renderer.renderPipes.batch.break(instructionSet);
-            instructionSet.add(graphics);
+
+            if (this.aloneDrawer?.active)
+            {
+                this.aloneDrawer.add(graphics, instructionSet);
+            }
+            else
+            {
+                instructionSet.add(graphics);
+            }
         }
 
         const gpuData = graphics._gpuData[this.renderer.uid];
@@ -152,7 +187,7 @@ export class GraphicsPipe implements RenderPipe<Graphics>
         if (!contextSystem.getGpuContext(context).batches.length)
         { return; }
 
-        const shader = context.customShader || this._adaptor.shader;
+        const shader = context.customShader || this.shaderFor?.(graphics) || this._adaptor.shader;
 
         this.state.blendMode = graphics.groupBlendMode;
 
@@ -167,7 +202,7 @@ export class GraphicsPipe implements RenderPipe<Graphics>
             0,
         );
 
-        this._adaptor.execute(this, graphics);
+        this._adaptor.execute(this, graphics, shader);
     }
 
     private _rebuild(graphics: Graphics)
