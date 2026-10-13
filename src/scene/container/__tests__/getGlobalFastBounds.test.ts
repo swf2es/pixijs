@@ -159,6 +159,32 @@ describe('getFastGlobalBounds', () =>
         expect(bounds).toMatchObject({ minX: -10, minY: -10, maxX: 110, maxY: 110 });
     });
 
+    it('should place a nested render group with effects in its parent', async () =>
+    {
+        const root = new Container({ isRenderGroup: true, label: 'root' });
+        const menu = new Container({ label: 'menu' });
+        const submenu = new Container({ isRenderGroup: true, label: 'submenu' });
+        const child = new DummyView({ label: 'child' });
+
+        submenu.x = 100;
+        submenu.effects = [new DummyEffect()];
+
+        root.addChild(menu);
+        menu.addChild(submenu);
+        submenu.addChild(child);
+
+        updateRenderGroupTransforms(root.renderGroup, true);
+
+        const bounds = menu.getFastGlobalBounds();
+
+        expect(bounds).toMatchObject({ minX: 90, minY: -10, maxX: 210, maxY: 110 });
+
+        // measured itself, it is in its own group's space, which is taken to the world after
+        const own = submenu.getFastGlobalBounds();
+
+        expect(own).toMatchObject({ minX: 90, minY: -10, maxX: 210, maxY: 110 });
+    });
+
     it('should addMaskBounds correctly with existing bounds', async () =>
     {
         const bounds = new Bounds();

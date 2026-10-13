@@ -515,12 +515,14 @@ export class RenderLayer extends Container
      * @param factorRenderLayers
      * @param bounds
      * @param _currentLayer
+     * @param nested - Whether this is below the container measured, rather than it.
      * @internal
      */
     public override _getGlobalBoundsRecursive(
         factorRenderLayers: boolean,
         bounds: Bounds,
         _currentLayer: RenderLayer,
+        nested = false,
     ): void
     {
         if (!factorRenderLayers) return;
@@ -529,7 +531,7 @@ export class RenderLayer extends Container
 
         for (let i = 0; i < children.length; i++)
         {
-            children[i]._getGlobalBoundsRecursive(true, bounds, this);
+            children[i]._getGlobalBoundsRecursive(true, bounds, this, nested);
         }
     }
 

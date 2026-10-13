@@ -36,12 +36,14 @@ export interface GetFastGlobalBoundsMixin
      * @param {boolean} factorRenderLayers - A flag indicating whether to consider render layers in the calculation.
      * @param {Bounds} bounds - The bounds object to update with the calculated values.
      * @param {RenderLayer} currentLayer - The current render layer being processed.
+     * @param {boolean} [nested] - Whether this is below the container measured, rather than it.
      * @internal
      */
     _getGlobalBoundsRecursive(
         factorRenderLayers: boolean,
         bounds: Bounds,
         currentLayer: RenderLayer,
+        nested?: boolean,
     ): void;
 }
 
@@ -79,10 +81,9 @@ export const getFastGlobalBoundsMixin: Partial<Container> = {
         factorRenderLayers: boolean,
         bounds: Bounds,
         currentLayer: RenderLayer,
+        nested = false,
     )
     {
-        let localBounds = bounds;
-
         // Skip if the container is not in the current render layer when factoring render layers.
         if (factorRenderLayers && this.parentRenderLayer && this.parentRenderLayer !== currentLayer) return;
 
@@ -95,16 +96,20 @@ export const getFastGlobalBoundsMixin: Partial<Container> = {
         // Determine if effects need to be managed, requiring separate bounds handling.
         const manageEffects = !!this.effects.length;
 
+        // A render group below the container measured that has effects of its own gathers its
+        // bounds in its own space, as one without effects does, so they must be placed in its
+        // parent's by its place there too. The container measured itself is in its own group's
+        // space, which getFastGlobalBounds takes to the world.
+        const placing = nested && !!this.renderGroup && manageEffects;
+        const into = placing ? boundsPool.get().clear() : bounds;
+
         // Use a temporary bounds object if the container is a render group or has effects.
-        if (this.renderGroup || manageEffects)
-        {
-            localBounds = boundsPool.get().clear();
-        }
+        const localBounds = (this.renderGroup || manageEffects) ? boundsPool.get().clear() : into;
 
         // Add the container's own bounds area to the bounds if it exists.
         if (this.boundsArea)
         {
-            bounds.addRect(this.boundsArea, this.worldTransform);
+            into.addRect(this.boundsArea, this.worldTransform);
         }
         else
         {
@@ -127,7 +132,7 @@ export const getFastGlobalBoundsMixin: Partial<Container> = {
 
             for (let i = 0; i < children.length; i++)
             {
-                children[i]._getGlobalBoundsRecursive(factorRenderLayers, localBounds, currentLayer);
+                children[i]._getGlobalBoundsRecursive(factorRenderLayers, localBounds, currentLayer, true);
             }
         }
 
@@ -158,14 +163,24 @@ export const getFastGlobalBoundsMixin: Partial<Container> = {
             }
 
             // Add the local bounds to the final bounds and return the temporary bounds object.
-            bounds.addBounds(localBounds);
+            into.addBounds(localBounds);
             boundsPool.return(localBounds);
         }
         else if (this.renderGroup)
         {
             // If the container is a render group, add its local bounds to the final bounds.
-            bounds.addBounds(localBounds, this.relativeGroupTransform);
+            into.addBounds(localBounds, this.relativeGroupTransform);
             boundsPool.return(localBounds);
+        }
+
+        if (placing)
+        {
+            if (into.isValid)
+            {
+                bounds.addBounds(into, this.relativeGroupTransform);
+            }
+
+            boundsPool.return(into);
         }
     }
 
