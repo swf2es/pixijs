@@ -163,6 +163,25 @@ export class GlTextureSystem implements System, CanvasGenerator
         }
     }
 
+    /**
+     * Binds the texture to a unit and makes that unit the active one, with premultiplied alpha unpacking
+     * off, for a caller that uploads part of it itself (texSubImage2D). bind leaves the active unit where
+     * it was when the texture is bound already, and a render pass may have moved it since.
+     * @param texture - the texture to bind
+     * @param location - the unit to bind it to
+     */
+    public bindForUpload(texture: BindableTexture, location = 0): void
+    {
+        this.bind(texture, location);
+        this._activateLocation(location);
+
+        if (this._premultiplyAlpha)
+        {
+            this._premultiplyAlpha = false;
+            this._gl.pixelStorei(this._gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        }
+    }
+
     public bindSource(source: TextureSource, location = 0): void
     {
         const gl = this._gl;
