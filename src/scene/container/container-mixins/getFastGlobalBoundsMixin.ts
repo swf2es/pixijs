@@ -1,3 +1,4 @@
+import { FilterEffect } from '../../../filters/FilterEffect';
 import { Matrix } from '../../../maths/matrix/Matrix';
 import { type Renderable } from '../../../rendering/renderers/shared/Renderable';
 import { type RenderLayer } from '../../layers/RenderLayer';
@@ -164,14 +165,26 @@ export const getFastGlobalBoundsMixin: Partial<Container> = {
             // Apply each effect that modifies bounds.
             for (let i = 0; i < this.effects.length; i++)
             {
-                if (this.effects[i].addBounds)
+                const effect = this.effects[i];
+                // a filter's padding, only as a filter's area is measured (FilterEffect.padBounds)
+                const pads = FilterEffect._measuringArea > 0 && effect instanceof FilterEffect;
+
+                if (effect.addBounds || pads)
                 {
                     if (!advanced)
                     {
                         advanced = true;
                         localBounds.applyMatrix(renderGroup.worldTransform);
                     }
-                    this.effects[i].addBounds(localBounds, true);
+
+                    if (pads)
+                    {
+                        (effect as FilterEffect).padBounds(localBounds);
+                    }
+                    else
+                    {
+                        effect.addBounds(localBounds, true);
+                    }
                 }
             }
 

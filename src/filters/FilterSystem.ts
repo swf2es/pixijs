@@ -1,5 +1,6 @@
 import { ExtensionType } from '../extensions/Extensions';
 import { PassthroughFilter } from '../filters/defaults/passthrough/PassthroughFilter';
+import { FilterEffect } from '../filters/FilterEffect';
 import { Matrix } from '../maths/matrix/Matrix';
 import { type Rectangle } from '../maths/shapes/Rectangle';
 import { BindGroup } from '../rendering/renderers/gpu/shader/BindGroup';
@@ -23,7 +24,6 @@ import type { System } from '../rendering/renderers/shared/system/System';
 import type { Container } from '../scene/container/Container';
 import type { Sprite } from '../scene/sprite/Sprite';
 import type { Filter } from './Filter';
-import type { FilterEffect } from './FilterEffect';
 
 const quadGeometry = new Geometry({
     attributes: {
@@ -889,8 +889,9 @@ export class FilterSystem implements System
     {
         const filterEffect = instruction.filterEffect;
 
-        // the effect pads the container's bounds by its filters, which push pads by after
+        // filtered descendants pad what they draw; the effect itself not, as push pads by it after
         filterEffect._measuring = true;
+        FilterEffect._measuringArea++;
 
         try
         {
@@ -906,6 +907,7 @@ export class FilterSystem implements System
         finally
         {
             filterEffect._measuring = false;
+            FilterEffect._measuringArea--;
         }
     }
 

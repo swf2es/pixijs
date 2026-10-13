@@ -1,5 +1,6 @@
 import { AlphaFilter } from '../defaults/alpha/AlphaFilter';
 import { NoiseFilter } from '../defaults/noise/NoiseFilter';
+import { Rectangle } from '~/maths/shapes/Rectangle';
 import { Container } from '~/scene';
 import { Bounds } from '~/scene/container/bounds/Bounds';
 
@@ -152,13 +153,28 @@ describe('FilterEffect', () =>
         const effect = container.effects[0] as FilterEffect;
         const bounds = new Bounds(0, 0, 10, 10);
 
-        effect.addBounds(bounds);
+        effect.padBounds(bounds);
 
         expect(bounds).toMatchObject({ minX: -6, minY: -6, maxX: 16, maxY: 16 });
 
         effect._measuring = true;
-        effect.addBounds(bounds);
+        effect.padBounds(bounds);
 
         expect(bounds).toMatchObject({ minX: -6, minY: -6, maxX: 16, maxY: 16 });
+    });
+
+    it('should leave a container\'s bounds as drawn outside a filter\'s measure', () =>
+    {
+        const container = new Container({ isRenderGroup: true });
+        const child = new Container();
+        const filter = new AlphaFilter();
+
+        filter.padding = 8;
+        child.filters = [filter];
+        child.boundsArea = new Rectangle(0, 0, 10, 10);
+        container.addChild(child);
+
+        expect(container.getBounds()).toMatchObject({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
+        expect(container.getFastGlobalBounds()).toMatchObject({ minX: 0, minY: 0, maxX: 10, maxY: 10 });
     });
 });

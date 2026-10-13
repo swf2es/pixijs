@@ -31,13 +31,22 @@ export class FilterEffect implements Effect
     public _measuring = false;
 
     /**
-     * Grows the bounds of the container this effect filters by its enabled filters' padding, in the
-     * world's pixels as the filter system pads: what a filtered descendant draws past its shapes, a
-     * blur's or a glow's spread, is then inside an ancestor's filter area rather than cut off at the
-     * descendant's shapes.
-     * @param bounds - The bounds to grow, in world space.
+     * How deep in measuring a filter's area the filter systems are. Only that measure, which the fast
+     * bounds walk makes, pads a filtered descendant's bounds (padBounds); a container's bounds
+     * otherwise stay those of what it draws.
+     * @internal
      */
-    public addBounds(bounds: Bounds): void
+    public static _measuringArea = 0;
+
+    /**
+     * Grows the bounds of the container this effect filters by its enabled filters' padding, in the
+     * world's pixels as the filter system pads, while a filter's area is measured: what a filtered
+     * descendant draws past its shapes, a blur's or a glow's spread, is then inside an ancestor's
+     * filter area, as Flash Player's layer holds it, rather than cut off at the descendant's shapes.
+     * @param bounds - The bounds to grow, in world space.
+     * @internal
+     */
+    public padBounds(bounds: Bounds): void
     {
         if (this._measuring || !this.filters) return;
 

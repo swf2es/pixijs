@@ -142,9 +142,9 @@ describe('Culler', () =>
         expect(graphics.culled).toBe(false);
     });
 
-    it('cullable container that contains a child with a padded filter '
+    it('cullable container that contains a child with a padded filter'
             + 'such that the child in out of frame but the filter padding intersects the frame '
-            + 'should render the container and the child for the filter padding', () =>
+            + 'should render the filter padding but not the container or child', () =>
     {
         const container = new Container();
         const graphics = container.addChild(new Graphics().rect(0, 0, 10, 10).fill());
@@ -159,8 +159,7 @@ describe('Culler', () =>
 
         Culler.shared.cull(container, view, false);
 
-        // the container's bounds hold what its child's filter draws past the child's shapes
-        expect(container.culled).toBe(false);
+        expect(container.culled).toBe(true);
         expect(graphics.culled).toBe(false);
     });
 
