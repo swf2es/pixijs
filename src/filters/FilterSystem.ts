@@ -842,6 +842,23 @@ export class FilterSystem implements System
      */
     private _calculateFilterArea(instruction: FilterInstruction, bounds: Bounds): void
     {
+        const filterEffect = instruction.filterEffect;
+
+        // the effect pads the container's bounds by its filters, which push pads by after
+        filterEffect._measuring = true;
+
+        try
+        {
+            this._measureFilterArea(instruction, bounds);
+        }
+        finally
+        {
+            filterEffect._measuring = false;
+        }
+    }
+
+    private _measureFilterArea(instruction: FilterInstruction, bounds: Bounds): void
+    {
         // this path is used by the blend modes mostly!
         // they collect all renderables and push them into a list.
         // this list is then used to calculate the bounds of the filter area

@@ -9,6 +9,7 @@ import { Bounds } from '~/scene/container/bounds/Bounds';
 import { Container } from '~/scene/container/Container';
 import { Graphics } from '~/scene/graphics/shared/Graphics';
 
+import type { FilterEffect } from '../FilterEffect';
 import type { BindGroup } from '~/rendering/renderers/gpu/shader/BindGroup';
 
 function filtered(): Container
@@ -109,6 +110,34 @@ describe('FilterSystem', () =>
         ]);
 
         spy.mockRestore();
+        renderer.destroy();
+    });
+
+    it('should measure a filtered child by what its filters draw past its shapes', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const stage = new Container();
+        const outer = filtered();
+        const inner = outer.children[0];
+
+        outer.filters[0].padding = 4;
+        inner.filters[0].padding = 8;
+        stage.addChild(outer);
+        renderer.render(stage);
+
+        const bounds = new Bounds();
+
+        renderer.filter['_calculateFilterArea']({
+            renderPipeId: 'filter',
+            action: 'pushFilter',
+            canBundle: false,
+            container: outer,
+            filterEffect: outer.effects[0] as FilterEffect,
+        }, bounds);
+
+        // the child's shapes, padded by its filter, but not by the outer filter, which push pads by
+        expect(bounds).toMatchObject({ minX: 2, minY: 2, maxX: 38, maxY: 38 });
+
         renderer.destroy();
     });
 });

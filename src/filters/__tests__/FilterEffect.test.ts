@@ -1,6 +1,7 @@
 import { AlphaFilter } from '../defaults/alpha/AlphaFilter';
 import { NoiseFilter } from '../defaults/noise/NoiseFilter';
 import { Container } from '~/scene';
+import { Bounds } from '~/scene/container/bounds/Bounds';
 
 import type { FilterEffect } from '../FilterEffect';
 
@@ -135,5 +136,29 @@ describe('FilterEffect', () =>
 
         expect(container.effects.length).toBe(1);
         expect((container.effects[0] as FilterEffect).filters).toEqual([alphaFilter]);
+    });
+
+    it('should pad bounds by its enabled filters, except while its own area is measured', () =>
+    {
+        const container = new Container();
+        const blur = new AlphaFilter();
+        const off = new AlphaFilter();
+
+        blur.padding = 6.5;
+        off.padding = 100;
+        off.enabled = false;
+        container.filters = [blur, off];
+
+        const effect = container.effects[0] as FilterEffect;
+        const bounds = new Bounds(0, 0, 10, 10);
+
+        effect.addBounds(bounds);
+
+        expect(bounds).toMatchObject({ minX: -6, minY: -6, maxX: 16, maxY: 16 });
+
+        effect._measuring = true;
+        effect.addBounds(bounds);
+
+        expect(bounds).toMatchObject({ minX: -6, minY: -6, maxX: 16, maxY: 16 });
     });
 });
