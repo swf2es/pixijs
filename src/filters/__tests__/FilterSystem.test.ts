@@ -1,9 +1,11 @@
 import { AlphaFilter } from '../defaults/alpha/AlphaFilter';
 import { getWebGLRenderer } from '@test-utils';
 import { Rectangle } from '~/maths/shapes/Rectangle';
+import { RenderTarget } from '~/rendering/renderers/shared/renderTarget/RenderTarget';
 import { TextureSource } from '~/rendering/renderers/shared/texture/sources/TextureSource';
 import { Texture } from '~/rendering/renderers/shared/texture/Texture';
 import { TexturePool } from '~/rendering/renderers/shared/texture/TexturePool';
+import { Bounds } from '~/scene/container/bounds/Bounds';
 import { Container } from '~/scene/container/Container';
 import { Graphics } from '~/scene/graphics/shared/Graphics';
 
@@ -82,6 +84,31 @@ describe('FilterSystem', () =>
         expect(filterData.skip).toBe(false);
         expect(texels).toEqual([-2, -2, 18, 18]);
 
+        renderer.destroy();
+    });
+
+    it('should copy what is behind from the pixels the bounds are on', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const resolution = 1.62;
+        const target = new RenderTarget({
+            colorTextures: [new TextureSource({ width: 100, height: 100, resolution })],
+        });
+        // 27 / 1.62 * 1.62 is a hair short of 27
+        const bounds = new Bounds(27 / resolution, 54 / resolution, 61 / resolution, 108 / resolution);
+        const spy = jest.spyOn(renderer.renderTarget, 'copyToTexture');
+
+        renderer.filter.getBackTexture(target, bounds);
+
+        const [, , origin, size, to] = spy.mock.calls[0];
+
+        expect([origin, size, to]).toEqual([
+            { x: 27, y: 54 },
+            { width: 34, height: 54 },
+            { x: 0, y: 0 },
+        ]);
+
+        spy.mockRestore();
         renderer.destroy();
     });
 });

@@ -448,11 +448,15 @@ export class FilterSystem implements System
             y -= previousBounds.minY;
         }
 
-        x = Math.floor(x * backgroundResolution);
-        y = Math.floor(y * backgroundResolution);
+        // The bounds are on whole pixels of the target but kept in its units, as k * (1 / r), which
+        // at a resolution such as 1.62 can come back a hair short of k: flooring took the pixel
+        // before, so what is behind a moving blend was read a pixel off at those positions alone,
+        // and shook. Rounded, the corner and the size are the pixels the bounds are on.
+        x = Math.round(x * backgroundResolution);
+        y = Math.round(y * backgroundResolution);
 
-        const width = Math.ceil(bounds.width * backgroundResolution);
-        const height = Math.ceil(bounds.height * backgroundResolution);
+        const width = Math.round(bounds.width * backgroundResolution);
+        const height = Math.round(bounds.height * backgroundResolution);
 
         this.renderer.renderTarget.copyToTexture(
             lastRenderSurface,
