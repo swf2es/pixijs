@@ -88,7 +88,9 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
 5. **The filter pipeline:**
    - no pass for empty content;
    - plain GL blending for additive and similar modes over an opaque
-     backdrop, checked against Flash first;
+     backdrop, checked against Flash first (done for add, subtract,
+     multiply and screen: swf2es chooses them, and `subtract` maps to
+     WebGL's reverse subtraction here);
    - a filter's output reused when its content only moved;
    - filter objects, listeners and textures pooled rather than rebuilt.
 6. **Then whatever the profiles show next.** By this point much of the

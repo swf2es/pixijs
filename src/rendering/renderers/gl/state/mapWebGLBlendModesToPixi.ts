@@ -27,6 +27,9 @@ export function mapWebGLBlendModesToPixi(gl: GlRenderingContext): Record<BLEND_M
     blendMap['screen-npm'] = [gl.SRC_ALPHA, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA];
 
     blendMap.erase = [gl.ZERO, gl.ONE_MINUS_SRC_ALPHA];
+    // What is drawn taken from what is there, each channel floored at zero by the target, and the
+    // alphas added: Flash's subtract over an opaque backdrop, which keeps it opaque.
+    blendMap.subtract = [gl.ONE, gl.ONE, gl.ONE, gl.ONE, gl.FUNC_REVERSE_SUBTRACT, gl.FUNC_ADD];
 
     const isWebGl2 = !(gl instanceof DOMAdapter.get().getWebGLRenderingContext());
 
@@ -56,8 +59,6 @@ export function mapWebGLBlendModesToPixi(gl: GlRenderingContext): Record<BLEND_M
     // array[BLEND_MODES.DST_OUT] = [gl.ZERO, gl.ONE_MINUS_SRC_ALPHA];
     // array[BLEND_MODES.DST_ATOP] = [gl.ONE_MINUS_DST_ALPHA, gl.SRC_ALPHA];
     // array[BLEND_MODES.XOR] = [gl.ONE_MINUS_DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA];
-    // SUBTRACT from flash
-    // array[BLEND_MODES.SUBTRACT] = [gl.ONE, gl.ONE, gl.ONE, gl.ONE, gl.FUNC_REVERSE_SUBTRACT, gl.FUNC_ADD];
 
     return blendMap as Record<BLEND_MODES, number[]>;
 }
