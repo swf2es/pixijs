@@ -5,6 +5,7 @@ import { type Rectangle } from '../maths/shapes/Rectangle';
 import { BindGroup } from '../rendering/renderers/gpu/shader/BindGroup';
 import { Geometry } from '../rendering/renderers/shared/geometry/Geometry';
 import { UniformGroup } from '../rendering/renderers/shared/shader/UniformGroup';
+import { TextureSource } from '../rendering/renderers/shared/texture/sources/TextureSource';
 import { Texture } from '../rendering/renderers/shared/texture/Texture';
 import { TexturePool } from '../rendering/renderers/shared/texture/TexturePool';
 import { RendererType } from '../rendering/renderers/types';
@@ -180,6 +181,13 @@ export class FilterSystem implements System
     private readonly _globalFilterBindGroup: BindGroup = new BindGroup({});
     private _activeFilterData: FilterData;
     private _passthroughFilter: Filter;
+    /**
+     * Bound as the back texture of a filter that reads none, in place of Texture.EMPTY: every
+     * Graphics batch's bind group fills its unused slots with EMPTY, whose source then has so many
+     * listeners that the bind group's change of resource scanned them all, each time a filter
+     * that reads the back texture followed one that does not.
+     */
+    private _emptyBackTexture: Texture = null;
 
     constructor(renderer: WebGLRenderer | WebGPURenderer)
     {
@@ -541,6 +549,13 @@ export class FilterSystem implements System
 
     public destroy(): void
     {
+        if (this._emptyBackTexture)
+        {
+            this._globalFilterBindGroup.destroy();
+            this._emptyBackTexture.destroy(true);
+            this._emptyBackTexture = null;
+        }
+
         this._passthroughFilter?.destroy(true);
         (this._passthroughFilter as null) = null;
     }
@@ -876,8 +891,15 @@ export class FilterSystem implements System
         // this will batch the shader uniform data and give us a buffer resource we can
         // set on our globalUniform Bind Group
         // update the resources on the bind group...
+        let backTexture = filterData.backTexture;
+
+        if (backTexture === Texture.EMPTY)
+        {
+            backTexture = this._emptyBackTexture ??= new Texture({ source: new TextureSource() });
+        }
+
         this._globalFilterBindGroup.setResource(inputTexture.source.style, 2);
-        this._globalFilterBindGroup.setResource(filterData.backTexture.source, 3);
+        this._globalFilterBindGroup.setResource(backTexture.source, 3);
 
         if (firstEnabled === lastEnabled)
         {

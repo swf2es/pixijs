@@ -1,8 +1,12 @@
 import { AlphaFilter } from '../defaults/alpha/AlphaFilter';
 import { getWebGLRenderer } from '@test-utils';
+import { TextureSource } from '~/rendering/renderers/shared/texture/sources/TextureSource';
+import { Texture } from '~/rendering/renderers/shared/texture/Texture';
 import { TexturePool } from '~/rendering/renderers/shared/texture/TexturePool';
 import { Container } from '~/scene/container/Container';
 import { Graphics } from '~/scene/graphics/shared/Graphics';
+
+import type { BindGroup } from '~/rendering/renderers/gpu/shader/BindGroup';
 
 function filtered(): Container
 {
@@ -33,5 +37,24 @@ describe('FilterSystem', () =>
         expect(() => renderer.render(stage)).not.toThrow();
 
         renderer.destroy();
+    });
+
+    it('should bind an empty back texture of its own for a filter that reads none', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const stage = new Container();
+
+        stage.addChild(filtered());
+        renderer.render(stage);
+
+        const group = renderer.filter['_globalFilterBindGroup'] as BindGroup;
+        const back = group.resources[3];
+
+        expect(back).toBeInstanceOf(TextureSource);
+        expect(back).not.toBe(Texture.EMPTY.source);
+
+        renderer.destroy();
+
+        expect((back as TextureSource).destroyed).toBe(true);
     });
 });
