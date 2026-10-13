@@ -34,6 +34,13 @@ export class RenderGroupSystem implements System
         name: 'renderGroup',
     } as const;
 
+    /**
+     * Called as a render group's instructions are about to be built again, its structure having changed:
+     * for a renderer that times how long a group goes unchanged, as swf2es batches the Graphics of a
+     * group that has not been rebuilt for a while.
+     */
+    public onBuildInstructions: ((renderGroup: RenderGroup) => void) | null = null;
+
     private readonly _renderer: Renderer;
 
     constructor(renderer: Renderer)
@@ -244,7 +251,9 @@ export class RenderGroupSystem implements System
     private _buildInstructions(renderGroup: RenderGroup, renderer: Renderer): void;
     private _buildInstructions(renderGroup: RenderGroup, rendererOrPipes: RenderPipes | Renderer): void
     {
-    // rebuild the scene graph based on layers...
+        this.onBuildInstructions?.(renderGroup);
+
+        // rebuild the scene graph based on layers...
         const root = renderGroup.root;
         const instructionSet = renderGroup.instructionSet;
 

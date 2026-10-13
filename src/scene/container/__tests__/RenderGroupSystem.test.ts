@@ -71,4 +71,24 @@ describe('RenderGroupSystem', () =>
 
         expect(container.renderGroup.texture._source.scaleMode).toEqual('nearest');
     });
+
+    it('should tell onBuildInstructions of each build of a render group', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const container = new Container({ isRenderGroup: true });
+        const built: unknown[] = [];
+
+        renderer.renderGroup.onBuildInstructions = (renderGroup) => built.push(renderGroup);
+        renderer.render(container);
+        expect(built).toEqual([container.renderGroup]);
+
+        renderer.render(container);
+        expect(built).toHaveLength(1);
+
+        container.addChild(new Container());
+        renderer.render(container);
+        expect(built).toEqual([container.renderGroup, container.renderGroup]);
+
+        renderer.destroy();
+    });
 });
