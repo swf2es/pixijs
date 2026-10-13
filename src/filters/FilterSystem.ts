@@ -68,6 +68,9 @@ export interface FilterInstruction extends Instruction
     filterEffect: FilterEffect,
 }
 
+/** How far a filter region's edge may be from a texel and still be taken as on it. */
+const TEXEL_SNAP = 1e-6;
+
 /**
  * Class representing the data required for applying filters.
  * This class holds various properties that are used during the filter application process.
@@ -1064,6 +1067,15 @@ export class FilterSystem implements System
 
         // // to find the previous resolution we need to account for the skipped filters
         // // the following will find the last non skipped filter...
+
+        // The padding is whole pixels, which at a resolution that is no whole number (a stage fitted
+        // to its window) moved the region off the texels again: the filter read its input between
+        // texels, and a blend nested in a layer, its region starting left of or above the layer's,
+        // read edge texels of its pooled back texture that the copy of what is behind never reached.
+        bounds.minX = Math.floor((bounds.minX * resolution) + TEXEL_SNAP) / resolution;
+        bounds.minY = Math.floor((bounds.minY * resolution) + TEXEL_SNAP) / resolution;
+        bounds.maxX = Math.ceil((bounds.maxX * resolution) - TEXEL_SNAP) / resolution;
+        bounds.maxY = Math.ceil((bounds.maxY * resolution) - TEXEL_SNAP) / resolution;
 
         // store the values that will be used to apply the filters
         filterData.antialias = antialias;

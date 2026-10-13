@@ -1,5 +1,6 @@
 import { AlphaFilter } from '../defaults/alpha/AlphaFilter';
 import { getWebGLRenderer } from '@test-utils';
+import { Rectangle } from '~/maths/shapes/Rectangle';
 import { TextureSource } from '~/rendering/renderers/shared/texture/sources/TextureSource';
 import { Texture } from '~/rendering/renderers/shared/texture/Texture';
 import { TexturePool } from '~/rendering/renderers/shared/texture/TexturePool';
@@ -56,5 +57,31 @@ describe('FilterSystem', () =>
         renderer.destroy();
 
         expect((back as TextureSource).destroyed).toBe(true);
+    });
+
+    it('should keep a padded filter region on the texels at a fractional resolution', async () =>
+    {
+        const renderer = await getWebGLRenderer({ resolution: 1.5 });
+        const filter = new AlphaFilter();
+
+        filter.padding = 1;
+        filter.resolution = 'inherit';
+
+        const filterData = renderer.filter['_pushFilterData']();
+
+        filterData.bounds.set(0.3, 0.3, 10.2, 10.2);
+        filterData.filters = [filter];
+        filterData.skip = false;
+
+        renderer.filter['_calculateFilterBounds'](filterData, new Rectangle(0, 0, 150, 150), false, 1.5, 1);
+
+        const { minX, minY, maxX, maxY } = filterData.bounds;
+        const texel = (v: number) => Math.round(v * 1.5 * 1e6) / 1e6;
+        const texels = [texel(minX), texel(minY), texel(maxX), texel(maxY)];
+
+        expect(filterData.skip).toBe(false);
+        expect(texels).toEqual([-2, -2, 18, 18]);
+
+        renderer.destroy();
     });
 });
