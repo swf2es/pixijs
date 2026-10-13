@@ -83,6 +83,22 @@ export class GlBufferSystem implements System
         this._maxBindings = this._renderer.limits.maxUniformBindings;
     }
 
+    /**
+     * Has the buffer's GL copy made again at the size of the data it is next given. Uploading smaller
+     * data otherwise writes it into the larger copy, which is kept: for a buffer cut back on the CPU,
+     * whose GPU copy should be cut back too.
+     * @param buffer - The buffer to resize on the GPU.
+     */
+    public resizeOnNextUpload(buffer: Buffer): void
+    {
+        const glBuffer = buffer._gpuData[this._renderer.uid] as GlBuffer;
+
+        if (glBuffer)
+        {
+            glBuffer.byteLength = -1;
+        }
+    }
+
     public getGlBuffer(buffer: Buffer): GlBuffer
     {
         buffer._gcLastUsed = this._renderer.gc.now;

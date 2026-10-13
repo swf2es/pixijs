@@ -1,7 +1,11 @@
 import { extensions, ExtensionType } from '../../../extensions/Extensions';
+import { ViewableBuffer } from '../../../utils/data/ViewableBuffer';
 import { State } from '../../renderers/shared/state/State';
+import { RendererType } from '../../renderers/types';
 import { DefaultBatcher } from './DefaultBatcher';
 
+import type { WebGLRenderer } from '../../renderers/gl/WebGLRenderer';
+import type { Buffer } from '../../renderers/shared/buffer/Buffer';
 import type { Geometry } from '../../renderers/shared/geometry/Geometry';
 import type { InstructionSet } from '../../renderers/shared/instructions/InstructionSet';
 import type { BatchPipe, InstructionPipe } from '../../renderers/shared/instructions/RenderPipe';
@@ -17,6 +21,14 @@ export interface BatcherAdaptor
     execute(batchPipe: BatcherPipe, batch: Batch): void
     contextChange?(): void;
 }
+
+/** Buffers smaller than this, attributes and indices together, are never cut back: not worth a copy. */
+const TRIM_FLOOR = 1 << 16;
+/**
+ * How long a batcher may use under a quarter of its buffers before trim cuts them back. Long enough
+ * that one whose use swings comes back to its peak first.
+ */
+const TRIM_MS = 3000;
 
 /**
  * A pipe that batches elements into batches and sends them to the renderer.
@@ -52,6 +64,9 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
     private _activeBatch: Batcher;
 
     public static _availableBatchers: Record<string, new (options: BatcherOptions) => Batcher> = Object.create(null);
+
+    /** When each batcher was first seen using under a quarter of its buffers, since it last used more. */
+    private readonly _lowSince = new WeakMap<Batcher, number>();
 
     public static getBatcher(name: string, maxTextures: number): Batcher
     {
@@ -161,6 +176,92 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
         }
 
         this._adaptor.execute(this, batch);
+    }
+
+    /**
+     * Cuts back the buffers of the batchers that have used under a quarter of them since `TRIM_MS`
+     * before `now`, to twice what they use. A batcher only grows its buffers, to twice the most a build
+     * ever packed, so a render group that once held many elements, or that took a larger group's
+     * batchers, kept megabytes for the few vertices it packs since. By time, so that a group that is
+     * not rebuilt is cut back too. What the last build packed is kept: a group not rebuilt draws it
+     * again, and an element updated in place writes where it was.
+     * @param now - the time now, in milliseconds, as performance.now gives it
+     */
+    public trim(now: number = performance.now()): void
+    {
+        const sets = this._batchersByInstructionSet;
+
+        for (const uid in sets)
+        {
+            const batchers = sets[uid];
+
+            for (const name in batchers)
+            {
+                this._trim(batchers[name], now);
+            }
+        }
+    }
+
+    private _trim(batcher: Batcher, now: number): void
+    {
+        const attributes = batcher.attributeBuffer;
+        const indices = batcher.indexBuffer;
+
+        // destroyed, or yet to build
+        if (!attributes || !indices || !batcher.geometry) return;
+
+        const floats = batcher.attributeSize || 0;
+        const count = batcher.indexSize || 0;
+        const held = attributes.size + indices.byteLength;
+        const used = (floats * 4) + (count * indices.BYTES_PER_ELEMENT);
+
+        if (held < TRIM_FLOOR || used * 4 > held)
+        {
+            this._lowSince.delete(batcher);
+
+            return;
+        }
+
+        const since = this._lowSince.get(batcher);
+
+        if (since === undefined)
+        {
+            this._lowSince.set(batcher, now);
+
+            return;
+        }
+
+        if (now - since < TRIM_MS) return;
+
+        this._lowSince.delete(batcher);
+
+        const packed = new ViewableBuffer(Math.max(floats * 2, 4) * 4);
+
+        packed.float32View.set(attributes.float32View.subarray(0, floats));
+
+        const length = Math.max(count * 2, 6);
+        const indexed = new (indices.constructor as Uint16ArrayConstructor)(length + (length % 2));
+
+        indexed.set(indices.subarray(0, count));
+        attributes.destroy();
+        batcher.attributeBuffer = packed;
+        batcher.indexBuffer = indexed;
+
+        const geometry = batcher.geometry;
+
+        this._resizeOnGpu(geometry.buffers[0]);
+        this._resizeOnGpu(geometry.indexBuffer);
+        geometry.buffers[0].setDataWithSize(packed.float32View, floats, true);
+        geometry.indexBuffer.setDataWithSize(indexed, count, true);
+    }
+
+    private _resizeOnGpu(buffer: Buffer): void
+    {
+        // WebGPU makes a buffer again as its size changes; a lost context's are made again anyway
+        if (this.renderer.type === RendererType.WEBGL)
+        {
+            (this.renderer as WebGLRenderer).buffer.resizeOnNextUpload(buffer);
+        }
     }
 
     /**
