@@ -779,9 +779,12 @@ export class FilterSystem implements System
             --currentIndex;
         }
 
-        return currentIndex > 0 && this._filterStack[currentIndex].inputTexture
-            ? this._filterStack[currentIndex].inputTexture.source._resolution
-            : rootResolution;
+        // push asks before it sets up the entry it has just pushed, whose input texture is then the
+        // one it held when last used, given back to the pool since: a resize lets the pool destroy
+        // it, which leaves it without a source.
+        const source = currentIndex > 0 ? this._filterStack[currentIndex].inputTexture?.source : undefined;
+
+        return source ? source._resolution : rootResolution;
     }
 
     /**
