@@ -205,7 +205,6 @@ export class GlBackBufferSystem implements System<GlBackBufferOptions>
         return this._backBufferTexture;
     }
 
-    /** destroys the back buffer */
     /**
      * Whether the render target is the back buffer's, which the screen is drawn from as it is presented.
      * @param renderTarget - the render target to check
@@ -215,6 +214,7 @@ export class GlBackBufferSystem implements System<GlBackBufferOptions>
         return !!this._backBufferTexture && renderTarget.colorTexture === this._backBufferTexture.source;
     }
 
+    /** destroys the back buffer */
     public destroy()
     {
         if (this._backBufferTexture)
