@@ -57,6 +57,17 @@ export interface GraphicsOptions extends PixiMixins.GraphicsOptions, ViewContain
      * ```
      */
     roundPixels?: boolean;
+    /**
+     * Whether it listens on its context for changes, and so draws them. One that draws a context shared
+     * by many and never changed once built need not: each Graphics adds listeners to its context, so a
+     * context shared by thousands had thousands, which each swap and each destroy searched.
+     * @default true
+     * @example
+     * ```ts
+     * const glyph = new Graphics({ context: sharedGlyphContext, observeContext: false });
+     * ```
+     */
+    observeContext?: boolean;
 }
 // eslint-disable-next-line requireExport/require-export-jsdoc, requireMemberAPI/require-member-api-doc
 export interface Graphics extends PixiMixins.Graphics, ViewContainer<GraphicsGpuData> {}
@@ -101,6 +112,7 @@ export class Graphics extends ViewContainer<GraphicsGpuData> implements Instruct
 
     private _context: GraphicsContext;
     private readonly _ownedContext: GraphicsContext;
+    private readonly _observeContext: boolean;
 
     /**
      * Creates a new Graphics object.
@@ -113,12 +125,14 @@ export class Graphics extends ViewContainer<GraphicsGpuData> implements Instruct
             options = { context: options };
         }
 
-        const { context, roundPixels, ...rest } = options || {};
+        const { context, roundPixels, observeContext, ...rest } = options || {};
 
         super({
             label: 'Graphics',
             ...rest
         });
+
+        this._observeContext = observeContext ?? true;
 
         if (!context)
         {
@@ -140,7 +154,7 @@ export class Graphics extends ViewContainer<GraphicsGpuData> implements Instruct
     {
         if (context === this._context) return;
 
-        if (this._context)
+        if (this._context && this._observeContext)
         {
             this._context.off('update', this.onViewUpdate, this);
             this._context.off('unload', this.unload, this);
@@ -148,9 +162,12 @@ export class Graphics extends ViewContainer<GraphicsGpuData> implements Instruct
 
         this._context = context;
 
-        // TODO store this bound function somewhere else..
-        this._context.on('update', this.onViewUpdate, this);
-        this._context.on('unload', this.unload, this);
+        if (this._observeContext)
+        {
+            // TODO store this bound function somewhere else..
+            this._context.on('update', this.onViewUpdate, this);
+            this._context.on('unload', this.unload, this);
+        }
 
         this.onViewUpdate();
     }
@@ -273,8 +290,11 @@ export class Graphics extends ViewContainer<GraphicsGpuData> implements Instruct
             this._context.destroy(options);
         }
 
-        this._context?.off('update', this.onViewUpdate, this);
-        this._context?.off('unload', this.unload, this);
+        if (this._observeContext)
+        {
+            this._context?.off('update', this.onViewUpdate, this);
+            this._context?.off('unload', this.unload, this);
+        }
 
         (this._ownedContext as null) = null;
         this._context = null;

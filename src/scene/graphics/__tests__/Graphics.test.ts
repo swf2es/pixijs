@@ -465,3 +465,38 @@ describe('Graphics', () =>
     //     });
     // });
 });
+
+describe('Graphics observeContext', () =>
+{
+    it('should listen on its context by default', () =>
+    {
+        const context = new GraphicsContext();
+        const graphics = new Graphics(context);
+
+        expect(context.listenerCount('update')).toBe(1);
+
+        graphics.destroy();
+
+        expect(context.listenerCount('update')).toBe(0);
+    });
+
+    it('should draw a context it does not listen on', () =>
+    {
+        const first = new GraphicsContext().rect(0, 0, 10, 10).fill(0xff0000);
+        const second = new GraphicsContext().rect(0, 0, 20, 20).fill(0xff0000);
+        const graphics = new Graphics({ context: first, observeContext: false });
+
+        expect(first.listenerCount('update')).toBe(0);
+        expect(first.listenerCount('unload')).toBe(0);
+
+        graphics.context = second;
+
+        expect(graphics.context).toBe(second);
+        expect(graphics.bounds.maxX).toBe(20);
+        expect(second.listenerCount('update')).toBe(0);
+
+        graphics.destroy();
+
+        expect(second.destroyed).toBe(false);
+    });
+});
