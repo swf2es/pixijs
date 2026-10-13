@@ -105,6 +105,31 @@ export class Pool<T extends PoolItem, I = Parameters<NonNullable<T['init']>>[0]>
         return this._count - this._index;
     }
 
+    /**
+     * Cuts the pool back: lets go of the free items past `most`, and of the items it has given out, whose
+     * users hold them if anyone does. The pool never lets go of either otherwise, so a spike in use kept
+     * its items, and the list of them, for good.
+     * @param most - how many free items to keep
+     */
+    public trim(most: number): void
+    {
+        const extra = this._index - most;
+
+        if (extra > 0)
+        {
+            this._index = most;
+            this._count -= extra;
+            this._pool.length = most;
+        }
+
+        // Past the free items are the slots of those given out, which still hold them. Cut only once they
+        // are many, rather than each time, which would shrink and grow the list again on every use.
+        if (this._pool.length > this._index + most)
+        {
+            this._pool.length = this._index;
+        }
+    }
+
     /** clears the pool */
     public clear()
     {

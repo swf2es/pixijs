@@ -228,4 +228,34 @@ describe('Pool', () =>
 
         expect(pool.get()).toEqual(item);
     });
+
+    it('should let go of free items past the most it keeps, and of those it gave out', () =>
+    {
+        class Item
+        {
+
+        }
+        const pool = new Pool(Item);
+        const items = Array.from({ length: 10 }, () => pool.get());
+
+        items.forEach((item) => pool.return(item));
+        expect(pool.totalFree).toBe(10);
+
+        pool.trim(4);
+        expect(pool.totalFree).toBe(4);
+        expect(pool.totalSize).toBe(4);
+        expect(pool['_pool']).toHaveLength(4);
+
+        // given out, its slots still hold them until there are many
+        const taken = [pool.get(), pool.get(), pool.get(), pool.get()];
+
+        pool.trim(4);
+        expect(pool['_pool']).toHaveLength(4);
+        pool.trim(2);
+        expect(pool['_pool']).toHaveLength(0);
+        expect(pool.totalUsed).toBe(4);
+
+        taken.forEach((item) => pool.return(item));
+        expect(pool.totalFree).toBe(4);
+    });
 });
