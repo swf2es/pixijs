@@ -176,6 +176,16 @@ export class FilterSystem implements System
     public filterAreaHook: ((instruction: FilterInstruction, bounds: Bounds, system: FilterSystem) => void) | null
         = null;
 
+    /**
+     * How deep in setting up a filter's textures the system is, and in applying a filter: a WebGL
+     * renderer defers resolving a multisampled target meanwhile, the back buffer's until it is presented
+     * (GlRenderTargetAdaptor.finishRenderPass).
+     * @internal
+     */
+    public _preparing = 0;
+    /** @internal */
+    public _applying = 0;
+
     private _filterStackIndex = 0;
     private _filterStack: FilterData[] = [];
 
@@ -599,38 +609,47 @@ export class FilterSystem implements System
      */
     private _setupBindGroupsAndRender(filter: Filter, input: Texture, renderer: WebGLRenderer | WebGPURenderer): void
     {
-        // TODO - should prolly use a adaptor...
-        if ((renderer as WebGPURenderer).renderPipes.uniformBatch)
-        {
-            const batchUniforms = (renderer as WebGPURenderer).renderPipes.uniformBatch
-                .getUboResource(this._filterGlobalUniforms);
+        this._applying++;
 
-            this._globalFilterBindGroup.setResource(batchUniforms, 0);
+        try
+        {
+            // TODO - should prolly use a adaptor...
+            if ((renderer as WebGPURenderer).renderPipes.uniformBatch)
+            {
+                const batchUniforms = (renderer as WebGPURenderer).renderPipes.uniformBatch
+                    .getUboResource(this._filterGlobalUniforms);
+
+                this._globalFilterBindGroup.setResource(batchUniforms, 0);
+            }
+            else
+            {
+                this._globalFilterBindGroup.setResource(this._filterGlobalUniforms, 0);
+            }
+
+            // now lets update the output texture...
+
+            // set bind group..
+            this._globalFilterBindGroup.setResource(input.source, 1);
+            this._globalFilterBindGroup.setResource(input.source.style, 2);
+
+            filter.groups[0] = this._globalFilterBindGroup;
+
+            renderer.encoder.draw({
+                geometry: quadGeometry,
+                shader: filter,
+                state: filter._state,
+                topology: 'triangle-list'
+            });
+
+            // WebGPU blit's automatically, but WebGL does not!
+            if (renderer.type === RendererType.WEBGL)
+            {
+                renderer.renderTarget.finishRenderPass();
+            }
         }
-        else
+        finally
         {
-            this._globalFilterBindGroup.setResource(this._filterGlobalUniforms, 0);
-        }
-
-        // now lets update the output texture...
-
-        // set bind group..
-        this._globalFilterBindGroup.setResource(input.source, 1);
-        this._globalFilterBindGroup.setResource(input.source.style, 2);
-
-        filter.groups[0] = this._globalFilterBindGroup;
-
-        renderer.encoder.draw({
-            geometry: quadGeometry,
-            shader: filter,
-            state: filter._state,
-            topology: 'triangle-list'
-        });
-
-        // WebGPU blit's automatically, but WebGL does not!
-        if (renderer.type === RendererType.WEBGL)
-        {
-            renderer.renderTarget.finishRenderPass();
+            this._applying--;
         }
     }
 
@@ -648,42 +667,51 @@ export class FilterSystem implements System
         previousFilterData: FilterData | null
     ): void
     {
-        // set all the filter data
-        filterData.backTexture = Texture.EMPTY;
+        this._preparing++;
 
-        /// ///
-        // bind...
-        // get a power of two or screen sized texture from our pool...
-        filterData.inputTexture = TexturePool.getOptimalTexture({
-            width: bounds.width,
-            height: bounds.height,
-            resolution: filterData.resolution,
-            antialias: filterData.antialias,
-        });
-
-        // Very cryptic, but important(!) moment.
-        //
-        // If we try to pull texture from the pool for backTexture before inputTexture,
-        // it will be unbounded later by startRenderPass. It happens because in such a case - the current backTexture
-        // is actually inputTexture from the previous filter application (check `pop` method).
-        //
-        // So maintaining the order (inputTexture -> backTexture) helps us to prevent unwanted texture unbinding.
-        if (filterData.blendRequired)
+        try
         {
-            renderer.renderTarget.finishRenderPass();
-            // this actually forces the current commandQueue to render everything so far.
-            // if we don't do this, we won't be able to copy pixels for the background
-            const renderTarget = renderer.renderTarget.getRenderTarget(filterData.outputRenderSurface);
+            // set all the filter data
+            filterData.backTexture = Texture.EMPTY;
 
-            filterData.backTexture = this.getBackTexture(renderTarget, bounds, previousFilterData?.bounds);
+            /// ///
+            // bind...
+            // get a power of two or screen sized texture from our pool...
+            filterData.inputTexture = TexturePool.getOptimalTexture({
+                width: bounds.width,
+                height: bounds.height,
+                resolution: filterData.resolution,
+                antialias: filterData.antialias,
+            });
+
+            // Very cryptic, but important(!) moment.
+            //
+            // If we try to pull texture from the pool for backTexture before inputTexture,
+            // it will be unbounded later by startRenderPass. It happens because in such a case - the current backTexture
+            // is actually inputTexture from the previous filter application (check `pop` method).
+            //
+            // So maintaining the order (inputTexture -> backTexture) helps us to prevent unwanted texture unbinding.
+            if (filterData.blendRequired)
+            {
+                renderer.renderTarget.finishRenderPass();
+                // this actually forces the current commandQueue to render everything so far.
+                // if we don't do this, we won't be able to copy pixels for the background
+                const renderTarget = renderer.renderTarget.getRenderTarget(filterData.outputRenderSurface);
+
+                filterData.backTexture = this.getBackTexture(renderTarget, bounds, previousFilterData?.bounds);
+            }
+
+            renderer.renderTarget.bind({ target: filterData.inputTexture, clear: true });
+
+            // set the global uniforms to take into account the bounds offset required
+            renderer.globalUniforms.push({
+                offset: bounds,
+            });
         }
-
-        renderer.renderTarget.bind({ target: filterData.inputTexture, clear: true });
-
-        // set the global uniforms to take into account the bounds offset required
-        renderer.globalUniforms.push({
-            offset: bounds,
-        });
+        finally
+        {
+            this._preparing--;
+        }
     }
 
     /**

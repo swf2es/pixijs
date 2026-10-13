@@ -7,6 +7,7 @@ import { TextureSource } from '../shared/texture/sources/TextureSource';
 import { Texture } from '../shared/texture/Texture';
 import { GlProgram } from './shader/GlProgram';
 
+import type { RenderTarget } from '../shared/renderTarget/RenderTarget';
 import type { RenderOptions } from '../shared/system/AbstractRenderer';
 import type { System } from '../shared/system/System';
 import type { WebGLRenderer } from './WebGLRenderer';
@@ -205,6 +206,15 @@ export class GlBackBufferSystem implements System<GlBackBufferOptions>
     }
 
     /** destroys the back buffer */
+    /**
+     * Whether the render target is the back buffer's, which the screen is drawn from as it is presented.
+     * @param renderTarget - the render target to check
+     */
+    public isBackBufferTarget(renderTarget: RenderTarget): boolean
+    {
+        return !!this._backBufferTexture && renderTarget.colorTexture === this._backBufferTexture.source;
+    }
+
     public destroy()
     {
         if (this._backBufferTexture)

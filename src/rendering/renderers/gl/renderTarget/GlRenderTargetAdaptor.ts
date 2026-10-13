@@ -23,6 +23,12 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
     private _renderer: WebGLRenderer<HTMLCanvasElement>;
     private _clearColorCache: RgbaArray = [0, 0, 0, 0];
     private _viewPortCache: Rectangle = new Rectangle();
+    /** The copy copyToTexture is making: its source, which finishRenderPass resolves only that region of. */
+    private _copying: {
+        source: RenderTarget;
+        origin: { x: number; y: number };
+        size: { width: number; height: number };
+    } | null = null;
     /** Pre-computed draw buffers arrays for MRT, indexed by color attachment count */
     private _drawBuffersCache: number[][];
     /**
@@ -71,8 +77,18 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
         const renderer = this._renderer;
         const glRenderTarget = renderTargetSystem.getGpuRenderTarget(sourceRenderSurfaceTexture);
         const gl = renderer.gl;
+        const previous = this._copying;
 
-        this.finishRenderPass(sourceRenderSurfaceTexture);
+        this._copying = { source: sourceRenderSurfaceTexture, origin: originSrc, size };
+
+        try
+        {
+            this.finishRenderPass(sourceRenderSurfaceTexture);
+        }
+        finally
+        {
+            this._copying = previous;
+        }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, glRenderTarget.resolveTargetFramebuffer);
         this._boundFramebuffer = glRenderTarget.resolveTargetFramebuffer;
@@ -297,6 +313,38 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
         if (!glRenderTarget.msaa || renderTarget.colorAttachments.length === 0) return;
 
         const gl = this._renderer.gl;
+        const copying = this._copying;
+
+        // A copy out of it (a blend's backdrop) resolves only the region it copies, which
+        // copyTexSubImage2D then reads, rather than the whole target for each small blend.
+        if (copying && copying.source === renderTarget)
+        {
+            const { x, y } = copying.origin;
+            const { width, height } = copying.size;
+
+            this.bindFramebuffer(glRenderTarget.resolveTargetFramebuffer);
+            gl.bindFramebuffer(gl.READ_FRAMEBUFFER, glRenderTarget.framebuffer);
+            gl.blitFramebuffer(
+                x, y, x + width, y + height,
+                x, y, x + width, y + height,
+                gl.COLOR_BUFFER_BIT, gl.NEAREST,
+            );
+            this.bindFramebuffer(glRenderTarget.framebuffer);
+
+            return;
+        }
+
+        // Setting up a filter's textures resolves before copying the backdrop, which resolves what it
+        // copies itself; and a filter pass drawn on the back buffer resolved it whole each time, though
+        // it is read only through such copies until it is presented. A filter's intermediate textures,
+        // which are sampled, still resolve as each pass ends.
+        const filter = this._renderer.filter;
+
+        if (filter && (filter._preparing > 0
+            || (filter._applying > 0 && this._renderer.backBuffer?.isBackBufferTarget(renderTarget))))
+        {
+            return;
+        }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, glRenderTarget.resolveTargetFramebuffer);
         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, glRenderTarget.framebuffer);
