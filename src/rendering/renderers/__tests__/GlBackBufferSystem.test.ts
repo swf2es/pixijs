@@ -61,4 +61,25 @@ describe('GlBackBufferSystem', () =>
         expect(renderer.gl.getContextAttributes().antialias).toEqual(false);
         expect(options.target.source.antialias).toEqual(true);
     });
+
+    it('should replace the canvas with the back buffer, not blend over it', async () =>
+    {
+        const renderer = await getWebGLRenderer({ useBackBuffer: true, preserveDrawingBuffer: true }) as WebGLRenderer;
+        const gl = renderer.gl;
+        const container = new Container();
+
+        // A frame whose pixels are all clear, over a canvas that kept an opaque one.
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.clearColor(1, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        renderer.render({ container, clearColor: [0, 0, 0, 0] });
+
+        const pixel = new Uint8Array(4);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+
+        expect(renderer.backBuffer['_state'].blend).toEqual(false);
+        expect(pixel[0]).toEqual(0);
+    });
 });

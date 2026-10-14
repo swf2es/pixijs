@@ -154,6 +154,9 @@ The candidates from step 2, and what to take with them:
   is the riskiest: it changes when every WebGL renderer resolves, and
   relies on nothing reading the back buffer before it is presented but
   copies out of it.
+- The back buffer presented in place of what the canvas holds, not
+  blended over it (`GlBackBufferSystem`): with a preserved drawing
+  buffer, a frame's clear pixels showed the frame before. Stands alone.
 - The tests several commits add to `src/filters/__tests__/FilterSystem.test.ts`
   conflict with each other, trivially, when a commit is applied alone.
 

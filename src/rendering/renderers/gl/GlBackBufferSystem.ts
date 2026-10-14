@@ -104,7 +104,11 @@ export class GlBackBufferSystem implements System<GlBackBufferOptions>
             this._antialias = false;
         }
 
+        // The back buffer is the frame whole, so it replaces what the canvas holds: blended over
+        // it, as a drawing buffer that is preserved keeps the last frame, pixels the frame left
+        // less than opaque (an erase, a clear background) showed that frame through them.
         this._state = State.for2d();
+        this._state.blend = false;
 
         const bigTriangleProgram = new GlProgram({
             vertex: `
