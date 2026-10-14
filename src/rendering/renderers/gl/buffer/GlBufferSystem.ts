@@ -99,6 +99,84 @@ export class GlBufferSystem implements System
         }
     }
 
+    /**
+     * Makes the buffer's GPU copy `byteLength` bytes long, keeping its first `keep` bytes, for a buffer
+     * whose contents live on the GPU alone and are written there with writeOnGpu: `buffer.data` is
+     * neither read nor uploaded, so the CPU need keep no copy of what it sent. The GPU copies what is
+     * kept, through a buffer of its own, and the GL buffer stays the same object, so that the vertex
+     * arrays that read it need not be made again. A lost context takes what it held; its owner is to
+     * write it again as it learns of the loss (runners.contextChange). WebGL 2 only.
+     * @param buffer - The buffer, which should not be garbage collected (`autoGarbageCollect` false), as
+     * its contents could not be uploaded again.
+     * @param byteLength - The bytes the GPU's copy is to hold.
+     * @param keep - The bytes from its start to keep, at most what it held and `byteLength`.
+     */
+    public resizeOnGpu(buffer: Buffer, byteLength: number, keep = 0): void
+    {
+        const gl = this._gl as WebGL2RenderingContext;
+        const glBuffer = this.getGlBuffer(buffer);
+        const drawType = (buffer.descriptor.usage & BufferUsage.STATIC) ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW;
+
+        keep = Math.min(keep, Math.max(glBuffer.byteLength, 0), byteLength);
+        // an index buffer bound while a vertex array is would become that array's
+        this._renderer.geometry.resetState();
+
+        let held: WebGLBuffer = null;
+
+        if (keep > 0)
+        {
+            // bound first to the buffer's own type: WebGL 2 copies index data only into index buffers
+            held = gl.createBuffer();
+            gl.bindBuffer(glBuffer.type, held);
+            gl.bufferData(glBuffer.type, keep, gl.STREAM_COPY);
+            gl.bindBuffer(gl.COPY_READ_BUFFER, glBuffer.buffer);
+            gl.copyBufferSubData(gl.COPY_READ_BUFFER, glBuffer.type, 0, 0, keep);
+        }
+
+        gl.bindBuffer(glBuffer.type, glBuffer.buffer);
+        gl.bufferData(glBuffer.type, byteLength, drawType);
+
+        if (held)
+        {
+            gl.bindBuffer(gl.COPY_READ_BUFFER, held);
+            gl.copyBufferSubData(gl.COPY_READ_BUFFER, glBuffer.type, 0, 0, keep);
+            gl.deleteBuffer(held);
+        }
+
+        gl.bindBuffer(gl.COPY_READ_BUFFER, null);
+        glBuffer.byteLength = byteLength;
+        // nothing of buffer.data is to go up over what is written
+        glBuffer.updateID = buffer._updateID;
+    }
+
+    /**
+     * Writes `data` into the buffer's GPU copy at `byteOffset` without a copy on the CPU, `buffer.data`
+     * left as it is: for a buffer resizeOnGpu made, long enough already. Bound to the copy target, so
+     * neither the vertex array bound nor the buffer bound for vertices changes. WebGL 2 only.
+     * @param buffer - The buffer to write into.
+     * @param byteOffset - Where in the GPU's copy to write, in bytes.
+     * @param data - What to write from.
+     * @param srcOffset - The first element of `data` to write.
+     * @param length - How many elements of `data` to write.
+     */
+    public writeOnGpu(
+        buffer: Buffer,
+        byteOffset: number,
+        data: ArrayBufferView & { length: number },
+        srcOffset = 0,
+        length = data.length - srcOffset
+    ): void
+    {
+        if (length <= 0) return;
+
+        const gl = this._gl as WebGL2RenderingContext;
+        const glBuffer = this.getGlBuffer(buffer);
+
+        gl.bindBuffer(gl.COPY_WRITE_BUFFER, glBuffer.buffer);
+        gl.bufferSubData(gl.COPY_WRITE_BUFFER, byteOffset, data, srcOffset, length);
+        gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
+    }
+
     public getGlBuffer(buffer: Buffer): GlBuffer
     {
         buffer._gcLastUsed = this._renderer.gc.now;
