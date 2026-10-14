@@ -179,4 +179,41 @@ describe('BatchArena', () =>
 
         renderer.destroy();
     });
+
+    it('should pack a group again for a renderer it moves to, where either keeps batches on the GPU', async () =>
+    {
+        const resident = (await getWebGLRenderer()) as WebGLRenderer;
+        const keeping = (await getWebGLRenderer()) as WebGLRenderer;
+
+        (resident.renderPipes.batch as unknown as BatcherPipe).gpuResident = true;
+
+        const group = row(25);
+        const packed = await packedOnCpu(() => row(25));
+
+        // from a renderer that kept nothing on the CPU, to one that would upload it from there
+        resident.render(group);
+        keeping.render(group);
+        expect(batcherOf(keeping, group)).toBeDefined();
+        expect(Array.from(batcherOf(keeping, group).attributeBuffer.float32View.subarray(0, packed.length)))
+            .toEqual(packed);
+
+        // and back, to one that updates in place only what it packed itself
+        resident.render(group);
+        group.children[2].x += 50;
+        resident.render(group);
+
+        const moved = await packedOnCpu(() =>
+        {
+            const group = row(25);
+
+            group.children[2].x += 50;
+
+            return group;
+        });
+
+        expect(onGpu(resident, batcherOf(resident, group), moved.length)).toEqual(moved);
+
+        resident.destroy();
+        keeping.destroy();
+    });
 });

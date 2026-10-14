@@ -61,6 +61,18 @@ export class RenderGroupSystem implements System
         this._context++;
     }
 
+    /**
+     * Whether the renderer's batch pipe keeps batches on the GPU alone (BatcherPipe.gpuResident), or it
+     * is destroyed, its batchers with it.
+     * @internal
+     */
+    public _keepsBatchesOnGpu(): boolean
+    {
+        const batch = this._renderer?.renderPipes?.batch as { gpuResident?: boolean } | undefined;
+
+        return !this._renderer || !!batch?.gpuResident;
+    }
+
     protected render({ container, transform }: {container: Container, transform: Matrix}): void
     {
         // we need to save the parent and renderGroupParent, so we can restore them later
@@ -196,10 +208,18 @@ export class RenderGroupSystem implements System
 
         renderGroup.instructionSet.renderPipes = renderPipes;
 
-        if (renderGroup._contextOf !== this || renderGroup._builtForContext !== this._context)
+        const last = renderGroup._contextOf as RenderGroupSystem | null;
+
+        if (last !== this || renderGroup._builtForContext !== this._context)
         {
-            // built for this renderer's lost context; a group new to it is built anyway
-            if (renderGroup._contextOf === this) renderGroup.structureDidChange = true;
+            // built for this renderer's lost context, or by another renderer where either keeps its
+            // batches on the GPU alone, with nothing on the CPU for the other to upload or update; a
+            // group new to it is built anyway, and one another renderer built is otherwise drawn from
+            // what that renderer's batchers keep
+            if (last === this || (last && (last._keepsBatchesOnGpu() || this._keepsBatchesOnGpu())))
+            {
+                renderGroup.structureDidChange = true;
+            }
 
             renderGroup._contextOf = this;
             renderGroup._builtForContext = this._context;
