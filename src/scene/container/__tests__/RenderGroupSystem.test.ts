@@ -1,8 +1,9 @@
-import '~/rendering/renderers/shared/texture/Texture';
 import { Container } from '../Container';
 import '../../text/init';
-import { getWebGLRenderer } from '@test-utils';
+import { getWebGLRenderer, loseAndRestoreContext } from '@test-utils';
+import { Texture } from '~/rendering/renderers/shared/texture/Texture';
 import { Text } from '~/scene';
+import { Sprite } from '~/scene/sprite/Sprite';
 
 describe('RenderGroupSystem', () =>
 {
@@ -90,5 +91,52 @@ describe('RenderGroupSystem', () =>
         expect(built).toEqual([container.renderGroup, container.renderGroup]);
 
         renderer.destroy();
+    });
+
+    it('should build every render group again for a context given back after a loss', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const root = new Container({ isRenderGroup: true });
+        const child = new Container({ isRenderGroup: true });
+        const builds: Container[] = [];
+
+        child.addChild(new Sprite(Texture.WHITE));
+        root.addChild(new Sprite(Texture.WHITE), child);
+        renderer.renderGroup.onBuildInstructions = (group) => builds.push(group.root);
+
+        renderer.render(root);
+        renderer.render(root);
+        expect(builds).toEqual([root, child]);
+
+        await loseAndRestoreContext(renderer);
+        builds.length = 0;
+        renderer.render(root);
+        expect(builds).toEqual([root, child]);
+
+        // and only once
+        renderer.render(root);
+        expect(builds).toHaveLength(2);
+
+        renderer.destroy();
+    });
+
+    it('should not build again a group another renderer rendered last', async () =>
+    {
+        const first = await getWebGLRenderer();
+        const second = await getWebGLRenderer();
+        const root = new Container({ isRenderGroup: true });
+        const builds: Container[] = [];
+
+        root.addChild(new Sprite(Texture.WHITE));
+        first.renderGroup.onBuildInstructions = (group) => builds.push(group.root);
+        second.renderGroup.onBuildInstructions = (group) => builds.push(group.root);
+
+        first.render(root);
+        second.render(root);
+        first.render(root);
+        expect(builds).toEqual([root]);
+
+        first.destroy();
+        second.destroy();
     });
 });

@@ -74,6 +74,14 @@ export class RenderGroup implements Instruction
 
     // other
     public structureDidChange = true;
+    /**
+     * The render group system that last rendered it, and which of its renderer's contexts that was for:
+     * a group rendered for a context since lost is built again (RenderGroupSystem).
+     * @internal
+     */
+    public _contextOf: object = null;
+    /** @internal */
+    public _builtForContext = -1;
 
     public instructionSet: InstructionSet = new InstructionSet();
 

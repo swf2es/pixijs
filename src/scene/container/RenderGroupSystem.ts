@@ -43,9 +43,22 @@ export class RenderGroupSystem implements System
 
     private readonly _renderer: Renderer;
 
+    /** Counts the contexts the renderer has had: a group built for an earlier one is built again. */
+    private _context = 0;
+
     constructor(renderer: Renderer)
     {
         this._renderer = renderer;
+    }
+
+    /**
+     * A new context, as the renderer starts or a lost one is given back: every render group is to build
+     * its instructions again as it is next rendered, so that its batches are packed and uploaded anew
+     * from the scene, rather than from copies kept of what was uploaded to the context lost.
+     */
+    protected contextChange(): void
+    {
+        this._context++;
     }
 
     protected render({ container, transform }: {container: Container, transform: Matrix}): void
@@ -182,6 +195,15 @@ export class RenderGroupSystem implements System
         renderGroup.runOnRender(renderer);
 
         renderGroup.instructionSet.renderPipes = renderPipes;
+
+        if (renderGroup._contextOf !== this || renderGroup._builtForContext !== this._context)
+        {
+            // built for this renderer's lost context; a group new to it is built anyway
+            if (renderGroup._contextOf === this) renderGroup.structureDidChange = true;
+
+            renderGroup._contextOf = this;
+            renderGroup._builtForContext = this._context;
+        }
 
         if (!renderGroup.structureDidChange)
         {
