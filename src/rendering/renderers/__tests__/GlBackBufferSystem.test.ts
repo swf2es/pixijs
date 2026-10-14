@@ -68,10 +68,9 @@ describe('GlBackBufferSystem', () =>
         const gl = renderer.gl;
         const container = new Container();
 
-        // A frame whose pixels are all clear, over a canvas that kept an opaque one.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.clearColor(1, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
+        // A frame whose pixels are all clear, over a canvas that kept an opaque one. Both are
+        // Pixi's: it keeps the clear colour it last set, which a clear of the test's own would change.
+        renderer.render({ container, clearColor: [1, 0, 0, 1] });
         renderer.render({ container, clearColor: [0, 0, 0, 0] });
 
         const pixel = new Uint8Array(4);
