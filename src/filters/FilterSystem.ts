@@ -703,9 +703,11 @@ export class FilterSystem implements System
 
             renderer.renderTarget.bind({ target: filterData.inputTexture, clear: true });
 
-            // set the global uniforms to take into account the bounds offset required
+            // set the global uniforms to take into account the bounds offset required; a colour
+            // root's content is drawn uncoloured by its render group (Container.colorRoot)
             renderer.globalUniforms.push({
                 offset: bounds,
+                worldColor: filterData.container?.colorRoot ? 0xFFFFFFFF : undefined,
             });
         }
         finally

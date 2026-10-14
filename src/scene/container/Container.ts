@@ -889,6 +889,35 @@ export class Container<C extends ContainerChild = ContainerChild> extends EventE
     public groupColor = 0xFFFFFF; // BGR
     /** @internal */
     public groupColorAlpha = 0xFFFFFFFF; // ABGR
+    /**
+     * Whether a colour root is this container or above it in its render group (`colorRoot`).
+     * @internal
+     */
+    public colorCut = false;
+
+    private _colorRoot = false;
+
+    /**
+     * Whether what this container draws is drawn uncoloured, by neither its own tint and alpha
+     * nor any of its ancestors': its filters' output then takes the colour, as a filter that
+     * applies it does. Flash colours a filtered object's bitmap, not what the filters are run
+     * on.
+     */
+    get colorRoot(): boolean
+    {
+        return this._colorRoot;
+    }
+
+    set colorRoot(value: boolean)
+    {
+        if (value === this._colorRoot) return;
+
+        this._colorRoot = value;
+
+        this._updateFlags |= UPDATE_COLOR;
+
+        this._onUpdate();
+    }
 
     // / BLEND related props //////////////
 

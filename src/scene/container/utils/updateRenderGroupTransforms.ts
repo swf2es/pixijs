@@ -77,18 +77,19 @@ export function updateRenderGroupTransform(renderGroup: RenderGroup)
             renderGroupParent.worldTransform,
         );
 
-        renderGroup.worldColor = multiplyColors(
+        // Below a colour root its ancestors' colour is not drawn.
+        renderGroup.worldColor = root.colorCut ? root.groupColor : multiplyColors(
             root.groupColor,
             renderGroupParent.worldColor,
         );
 
-        worldAlpha = root.groupAlpha * renderGroupParent.worldAlpha;
+        worldAlpha = root.colorCut ? root.groupAlpha : root.groupAlpha * renderGroupParent.worldAlpha;
     }
     else
     {
         renderGroup.worldTransform.copyFrom(root.localTransform);
-        renderGroup.worldColor = root.localColor;
-        worldAlpha = root.localAlpha;
+        renderGroup.worldColor = root.colorRoot ? 0xFFFFFF : root.localColor;
+        worldAlpha = root.colorRoot ? 1 : root.localAlpha;
     }
 
     // eslint-disable-next-line no-nested-ternary
@@ -173,18 +174,30 @@ function updateColorBlendVisibility(
 {
     if (updateFlags & UPDATE_COLOR)
     {
-        container.groupColor = multiplyColors(
-            container.localColor,
-            parent.groupColor
-        );
+        if (container.colorRoot)
+        {
+            // What it draws takes no colour, not even its own.
+            container.colorCut = true;
+            container.groupColor = 0xFFFFFF;
+            container.groupAlpha = 1;
+            container.groupColorAlpha = 0xFFFFFFFF;
+        }
+        else
+        {
+            container.colorCut = parent.colorCut;
+            container.groupColor = multiplyColors(
+                container.localColor,
+                parent.groupColor
+            );
 
-        let groupAlpha = container.localAlpha * parent.groupAlpha;
+            let groupAlpha = container.localAlpha * parent.groupAlpha;
 
-        // eslint-disable-next-line no-nested-ternary
-        groupAlpha = groupAlpha < 0 ? 0 : (groupAlpha > 1 ? 1 : groupAlpha);
+            // eslint-disable-next-line no-nested-ternary
+            groupAlpha = groupAlpha < 0 ? 0 : (groupAlpha > 1 ? 1 : groupAlpha);
 
-        container.groupAlpha = groupAlpha;
-        container.groupColorAlpha = container.groupColor + (((groupAlpha * 255) | 0) << 24);
+            container.groupAlpha = groupAlpha;
+            container.groupColorAlpha = container.groupColor + (((groupAlpha * 255) | 0) << 24);
+        }
     }
 
     if (updateFlags & UPDATE_BLEND)
