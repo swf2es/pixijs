@@ -122,8 +122,12 @@ export class RenderGroupPipe implements InstructionPipe<RenderGroup>
             this._renderer.globalUniforms.pop();
         }
 
-        renderGroup._batchableRenderGroup._batcher.updateElement(renderGroup._batchableRenderGroup);
-        renderGroup._batchableRenderGroup._batcher.geometry.buffers[0].update();
+        const batcher = renderGroup._batchableRenderGroup._batcher;
+
+        batcher.updateElement(renderGroup._batchableRenderGroup);
+
+        // an arena writes the update itself; its batcher's buffer holds nothing to upload
+        if (!batcher._arena) batcher.geometry.buffers[0].update();
     }
 
     private _executeDirect(renderGroup: RenderGroup): void

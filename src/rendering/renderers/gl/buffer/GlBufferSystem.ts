@@ -150,6 +150,19 @@ export class GlBufferSystem implements System
     }
 
     /**
+     * The bytes the buffer's GPU copy holds, as resizeOnGpu last made it: -1 if it has none, as a lost
+     * context leaves it, or if its data has changed since and is to be uploaded over it.
+     * @param buffer - The buffer.
+     * @returns Its GPU copy's length in bytes, or -1.
+     */
+    public sizeOnGpu(buffer: Buffer): number
+    {
+        const glBuffer = buffer._gpuData[this._renderer.uid] as GlBuffer;
+
+        return glBuffer && glBuffer.updateID === buffer._updateID ? glBuffer.byteLength : -1;
+    }
+
+    /**
      * Writes `data` into the buffer's GPU copy at `byteOffset` without a copy on the CPU, `buffer.data`
      * left as it is: for a buffer resizeOnGpu made, long enough already. Bound to the copy target, so
      * neither the vertex array bound nor the buffer bound for vertices changes. WebGL 2 only.

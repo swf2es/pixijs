@@ -2,6 +2,7 @@ import { extensions, ExtensionType } from '../../../extensions/Extensions';
 import { ViewableBuffer } from '../../../utils/data/ViewableBuffer';
 import { State } from '../../renderers/shared/state/State';
 import { RendererType } from '../../renderers/types';
+import { BatchArena } from './BatchArena';
 import { DefaultBatcher } from './DefaultBatcher';
 
 import type { WebGLRenderer } from '../../renderers/gl/WebGLRenderer';
@@ -80,6 +81,9 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
     /** When each batcher was first seen using under a quarter of its buffers, since it last used more. */
     private readonly _lowSince = new WeakMap<Batcher, number>();
 
+    /** Where batchers pack and update while batches are kept on the GPU alone (gpuResident). */
+    private _arena: BatchArena | null = null;
+
     public static getBatcher(name: string, maxTextures: number): Batcher
     {
         return new this._availableBatchers[name as keyof typeof this._availableBatchers]({ maxTextures });
@@ -91,6 +95,49 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
         this._adaptor = adaptor;
 
         this._adaptor.init?.(this);
+        renderer.runners.contextChange.add(this);
+    }
+
+    /**
+     * Whether batches are kept on the GPU alone: batchers pack into buffers shared by every instruction
+     * set, lent for each build and grown to the largest, and what they pack goes to the GPU as the build
+     * ends; elements updated in place are written there apart (BatchArena). Otherwise each batcher keeps
+     * what it packed for as long as it lives, to upload it again, which for a renderer of many render
+     * groups is all their vertices held twice. WebGL 2 alone; set before anything is built with it,
+     * since batchers built before keep their own. A lost context has every render group built again.
+     */
+    public get gpuResident(): boolean
+    {
+        return this._arena !== null;
+    }
+
+    public set gpuResident(value: boolean)
+    {
+        const renderer = this.renderer as WebGLRenderer | undefined;
+
+        if (!value || renderer?.type !== RendererType.WEBGL || renderer.context?.webGLVersion !== 2)
+        {
+            this._arena?.destroy();
+            this._arena = null;
+
+            return;
+        }
+
+        if (this._arena) return;
+
+        const buffers = renderer.buffer;
+
+        this._arena = new BatchArena({
+            sizeOnGpu: (buffer) => buffers.sizeOnGpu(buffer),
+            resizeOnGpu: (buffer, byteLength) => buffers.resizeOnGpu(buffer, byteLength),
+            writeOnGpu: (buffer, byteOffset, data, srcOffset, length) =>
+                buffers.writeOnGpu(buffer, byteOffset, data, srcOffset, length),
+        });
+    }
+
+    protected contextChange(): void
+    {
+        this._arena?.lost();
     }
 
     public buildStart(instructionSet: InstructionSet)
@@ -112,6 +159,7 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
 
         for (const i in this._activeBatches)
         {
+            this._arena?.lend(this._activeBatches[i]);
             this._activeBatches[i].begin();
         }
     }
@@ -130,6 +178,7 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
             {
                 batch = this._activeBatches[batcherName]
                     = BatcherPipe.getBatcher(batcherName, this.renderer.limits.maxBatchableTextures);
+                this._arena?.lend(batch);
                 batch.begin();
             }
 
@@ -153,6 +202,13 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
         for (const i in batches)
         {
             const batch = batches[i as keyof typeof batches];
+
+            if (this._arena)
+            {
+                this._arena.end(batch);
+                continue;
+            }
+
             const geometry = batch.geometry;
 
             geometry.indexBuffer.setDataWithSize(batch.indexBuffer, batch.indexSize, true);
@@ -163,6 +219,14 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
 
     public upload(instructionSet: InstructionSet)
     {
+        // built ones are on the GPU already; what was updated in place goes there now
+        if (this._arena)
+        {
+            this._arena.flush();
+
+            return;
+        }
+
         const batchers = this._batchersByInstructionSet[instructionSet.uid];
 
         for (const i in batchers)
@@ -183,6 +247,9 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
     {
         if (batch.action === 'startBatch')
         {
+            // updates made since the upload, as a group cached as a texture makes its own
+            this._arena?.flush();
+
             const batcher = batch.batcher;
             const geometry = batcher.geometry;
             const shader = batcher.shader;
@@ -322,7 +389,10 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
 
     public destroy()
     {
+        this._arena?.destroy();
+        this._arena = null;
         this.state = null;
+        this.renderer?.runners?.contextChange.remove(this);
         this.renderer = null;
 
         this._adaptor = null;

@@ -16,6 +16,7 @@ import type { Instruction } from '../../renderers/shared/instructions/Instructio
 import type { InstructionSet } from '../../renderers/shared/instructions/InstructionSet';
 import type { Shader } from '../../renderers/shared/shader/Shader';
 import type { Texture } from '../../renderers/shared/texture/Texture';
+import type { BatchArena } from './BatchArena';
 
 /**
  * The action types for a batch.
@@ -340,6 +341,13 @@ export abstract class Batcher
     /** The maximum number of textures per batch. */
     public readonly maxTextures: number;
 
+    /**
+     * The arena it packs in and updates elements through, where its batch pipe keeps batches on the GPU
+     * alone (BatcherPipe.gpuResident): its own buffers then hold nothing between builds.
+     * @internal
+     */
+    public _arena: BatchArena | null = null;
+
     /** The name of the batcher. Must be implemented by subclasses. */
     public abstract name: string;
     /** The vertex size of the batcher. Must be implemented by subclasses. */
@@ -457,23 +465,54 @@ export abstract class Batcher
     {
         this.dirty = true;
 
+        const arena = this._arena;
+
+        if (arena)
+        {
+            // packed apart, for the arena to write where the element lies on the GPU
+            const at = arena.reserveUpdate(
+                this,
+                batchableObject._attributeStart,
+                batchableObject.attributeSize * this.vertexSize
+            );
+
+            this._packElement(batchableObject, arena.updates.float32View, arena.updates.uint32View, at);
+
+            return;
+        }
+
         const attributeBuffer = this.attributeBuffer;
 
+        this._packElement(
+            batchableObject,
+            attributeBuffer.float32View,
+            attributeBuffer.uint32View,
+            batchableObject._attributeStart
+        );
+    }
+
+    private _packElement(
+        batchableObject: BatchableElement,
+        float32View: Float32Array,
+        uint32View: Uint32Array,
+        index: number
+    ): void
+    {
         if (batchableObject.packAsQuad)
         {
             this.packQuadAttributes(
                 batchableObject as BatchableQuadElement,
-                attributeBuffer.float32View,
-                attributeBuffer.uint32View,
-                batchableObject._attributeStart, batchableObject._textureId);
+                float32View,
+                uint32View,
+                index, batchableObject._textureId);
         }
         else
         {
             this.packAttributes(
                 batchableObject as BatchableMeshElement,
-                attributeBuffer.float32View,
-                attributeBuffer.uint32View,
-                batchableObject._attributeStart, batchableObject._textureId);
+                float32View,
+                uint32View,
+                index, batchableObject._textureId);
         }
     }
 
