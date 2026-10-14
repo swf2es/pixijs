@@ -1146,6 +1146,29 @@ export class GraphicsContext extends EventEmitter<{
     }
 
     /**
+     * Lets go of the commands and shapes of the context's paths, its bounds measured first: for a
+     * context built once and never to be built again, as one a renderer keeps from collection
+     * (`autoGarbageCollect` false) keeps its tessellation for as long as it lives. A crowd of shapes
+     * otherwise holds every outline twice, once as flattened points and once tessellated. Its bounds
+     * stay as measured, but its paths read as empty after: it cannot be built again, by this renderer
+     * or another, nor hit tested by its shapes.
+     */
+    public releasePaths(): void
+    {
+        void this.bounds;
+
+        for (let i = 0; i < this.instructions.length; i++)
+        {
+            const instruction = this.instructions[i];
+
+            if (instruction.action === 'texture') continue;
+
+            instruction.data.path?.releaseShapes();
+            instruction.data.hole?.releaseShapes();
+        }
+    }
+
+    /**
      * Check to see if a point is contained within this geometry.
      * @param point - Point to check if it's contained.
      * @returns {boolean} `true` if the point is contained within geometry.

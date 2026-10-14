@@ -76,6 +76,17 @@ export class GraphicsPath
     }
 
     /**
+     * Lets go of the path's commands and the shapes they were flattened to: for a path whose context is
+     * built and is never to be built again (GraphicsContext.releasePaths). It reads as empty after.
+     */
+    public releaseShapes(): void
+    {
+        this.instructions = [];
+        this._shapePath = null;
+        this._dirty = false;
+    }
+
+    /**
      * Provides access to the internal shape path, ensuring it is up-to-date with the current instructions.
      * @returns The `ShapePath` instance associated with this `GraphicsPath`.
      */
