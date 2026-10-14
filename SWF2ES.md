@@ -75,16 +75,35 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    the Canvas renderer. Each one goes only after checking that nothing in
    swf2es reaches it. The aim is a smaller bundle and less code to keep
    correct.
-4. **Memory, the arena way:**
-   - one frame arena for batch vertices and indices, reset each frame,
-     instead of a growing batcher per instruction set;
-   - retained geometry as typed arrays sub-allocated in shared buffers
-     (offset and length per mesh), with no CPU copy kept after upload
-     where nothing reads it again;
-   - shape paths dropped once tessellated, where bounds and hit tests do
-     not need them;
-   - context loss handled by rebuilding from the display list, not from
-     kept copies.
+4. **Memory, the arena way** (done but for the tessellations):
+   - one arena for batch vertices and indices instead of a growing
+     batcher per instruction set (`BatcherPipe.gpuResident`,
+     `BatchArena`): batchers pack into buffers lent for each build,
+     shared by every render group and grown to the largest, and what they
+     pack goes to the GPU, which alone keeps it; elements updated in place
+     are packed apart and written in runs. Not reset each frame: a group
+     not rebuilt draws what it packed before, as it did;
+   - retained geometry in shared buffers with no CPU copy after upload:
+     `GlBufferSystem.resizeOnGpu`, `writeOnGpu` and `sizeOnGpu` keep a
+     buffer's contents on the GPU alone, written in ranges and grown by
+     the GPU's own copy. swf2es's transform table keeps its atlas, every
+     drawn-alone context's vertices at an offset and length, that way.
+     Each context's tessellation stays on the CPU, in typed arrays: it is
+     what batched copies are packed from, and what the atlas and a
+     context drawn alone are packed again from;
+   - paths let go of once tessellated (`GraphicsContext.releasePaths`),
+     for contexts kept from collection whose owner can make them again;
+     swf2es's bounds and hit tests read its own shape data, not Pixi's;
+   - context loss handled by rebuilding: every render group is built
+     again for a restored context (`RenderGroupSystem`), so batches are
+     packed anew from the scene, not from kept copies.
+
+   Measured in swf2es's `bench.ts`, after a full collection: `--town 200`
+   held 170 MB of array buffers and 196 MB of JS heap, now 41 and 187;
+   `--branches 64` 55 MB of array buffers, now 7. Frame times are the
+   same, or shorter where groups batch (`--branches 64`, 5.0 to 4.4 ms).
+   Not done: sub-allocating the tessellations in shared buffers, which
+   would save their typed arrays' headers, some 5 MB in `--town 200`.
 5. **The filter pipeline:**
    - no pass for empty content;
    - plain GL blending for additive and similar modes over an opaque
