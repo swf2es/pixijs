@@ -79,7 +79,8 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    - one arena for batch vertices and indices instead of a growing
      batcher per instruction set (`BatcherPipe.gpuResident`,
      `BatchArena`): batchers pack into buffers lent for each build,
-     shared by every render group and grown to the largest, and what they
+     shared by every render group, grown to the largest and cut back by
+     `BatcherPipe.trim` once builds long use little of them, and what they
      pack goes to the GPU, which alone keeps it; elements updated in place
      are packed apart and written in runs. Not reset each frame: a group
      not rebuilt draws what it packed before, as it did;
@@ -96,7 +97,8 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
      swf2es's bounds and hit tests read its own shape data, not Pixi's;
    - context loss handled by rebuilding: every render group is built
      again for a restored context (`RenderGroupSystem`), so batches are
-     packed anew from the scene, not from kept copies.
+     packed anew from the scene, not from kept copies; and for a renderer
+     it moves to, where either renderer keeps its batches on the GPU.
 
    Measured in swf2es's `bench.ts`, after a full collection: `--town 200`
    held 170 MB of array buffers and 196 MB of JS heap, now 41 and 187;
