@@ -68,6 +68,10 @@ export class BatchArena
     /** Each run of updates to write: its batcher, and where it goes, where it lies and its floats. */
     private readonly _runs: Batcher[] = [];
     private readonly _spans: number[] = [];
+    /** The most bytes of attributes and of indices each batcher name packed in a build since trim last looked. */
+    private _most: Record<string, [number, number]> = Object.create(null);
+    /** When each name's packing buffers were first seen holding four times what its builds packed. */
+    private readonly _lowSince: Record<string, number> = Object.create(null);
 
     constructor(gpu: BatchArenaGpu)
     {
@@ -129,6 +133,11 @@ export class BatchArena
         this._place(indexBuffer, indices, batcher.indexSize);
         attributes._releaseData(EMPTY_FLOATS);
         indexBuffer._releaseData(indices.BYTES_PER_ELEMENT === 4 ? EMPTY_INTS : EMPTY_SHORTS);
+
+        const most = this._most[batcher.name] ??= [0, 0];
+
+        most[0] = Math.max(most[0], batcher.attributeSize * 4);
+        most[1] = Math.max(most[1], batcher.indexSize * indices.BYTES_PER_ELEMENT);
 
         const packing = this._packing[batcher.name];
 
@@ -218,6 +227,56 @@ export class BatchArena
         runs.length = 0;
         spans.length = 0;
         this._updateSize = 0;
+    }
+
+    /**
+     * Cuts back the packing buffers of each batcher name whose builds have packed under a quarter of them
+     * since `ms` before `now`, to twice the most they packed: they grow to the largest build ever made,
+     * so one large group, gone since, would otherwise have them held for as long as the renderer lives.
+     * Nothing is copied, as they hold nothing between builds.
+     * @param now - the time now, in milliseconds
+     * @param floor - the bytes below which they are not cut back
+     * @param ms - how long they must have been used that little
+     */
+    public trim(now: number, floor: number, ms: number): void
+    {
+        const mosts = this._most;
+
+        this._most = Object.create(null);
+
+        for (const name in this._packing)
+        {
+            const packing = this._packing[name];
+            const most = mosts[name] ?? [0, 0];
+            const held = packing.attributes.size + packing.indices.byteLength;
+
+            if (held < floor || (most[0] + most[1]) * 4 > held)
+            {
+                delete this._lowSince[name];
+                continue;
+            }
+
+            const since = this._lowSince[name];
+
+            if (since === undefined)
+            {
+                this._lowSince[name] = now;
+                continue;
+            }
+
+            if (now - since < ms) continue;
+
+            delete this._lowSince[name];
+
+            const IndexArray = packing.indices.constructor as Uint16ArrayConstructor;
+            const length = Math.max(Math.ceil(most[1] * 2 / packing.indices.BYTES_PER_ELEMENT), 6);
+
+            packing.attributes.destroy();
+            this._packing[name] = {
+                attributes: new ViewableBuffer(Math.max(Math.ceil(most[0] * 2 / 4) * 4, 16)),
+                indices: new IndexArray(length + (length % 2)),
+            };
+        }
     }
 
     /** The context was lost, and with it what the updates gathered were to be written into. */

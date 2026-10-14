@@ -216,4 +216,46 @@ describe('BatchArena', () =>
         resident.destroy();
         keeping.destroy();
     });
+
+    it('should cut back what a large group, rebuilt since as a small one, grew the packing buffers to', async () =>
+    {
+        const renderer = (await getWebGLRenderer()) as WebGLRenderer;
+        const pipe = renderer.renderPipes.batch as unknown as BatcherPipe;
+
+        pipe.gpuResident = true;
+
+        const group = row(3000);
+
+        renderer.render(group);
+
+        const arena = pipe['_arena'];
+        const grown = arena['_packing'].default.attributes.size;
+
+        // what was large is not cut back
+        pipe.trim(0);
+        pipe.trim(5000);
+        expect(arena['_packing'].default.attributes.size).toBe(grown);
+
+        group.removeChildren(10).forEach((child) => child.destroy());
+        renderer.render(group);
+        pipe.trim(6000);
+        expect(arena['_packing'].default.attributes.size).toBe(grown);
+        group.addChild(new Sprite(Texture.WHITE));
+        renderer.render(group);
+        pipe.trim(10000);
+
+        const cut = arena['_packing'].default.attributes.size;
+
+        expect(cut).toBeLessThan(grown / 4);
+
+        // and grown again as a build needs
+        group.removeChildren().forEach((child) => child.destroy());
+        row(400).children.slice().forEach((child) => group.addChild(child));
+        renderer.render(group);
+        expect(arena['_packing'].default.attributes.size).toBeGreaterThan(cut);
+        expect(onGpu(renderer, batcherOf(renderer, group), batcherOf(renderer, group).attributeSize))
+            .toEqual(await packedOnCpu(() => row(400)));
+
+        renderer.destroy();
+    });
 });

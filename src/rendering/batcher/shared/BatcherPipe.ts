@@ -288,6 +288,9 @@ export class BatcherPipe implements InstructionPipe<Batch>, BatchPipe
     {
         const sets = this._batchersByInstructionSet;
 
+        // batchers that pack in an arena hold nothing of their own between builds; the arena does
+        this._arena?.trim(now, TRIM_FLOOR, TRIM_MS);
+
         for (const uid in sets)
         {
             const batchers = sets[uid];
