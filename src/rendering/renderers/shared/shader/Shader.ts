@@ -337,11 +337,18 @@ export class Shader extends EventEmitter<{'destroy': Shader}>
             groups = {};
             groupMap ||= {};
             // Resources no WGSL binding names (all of them without a GPU program) go to a group
-            // of their own, past the groups the renderers set (0 to 3) and the GPU program's.
-            // It was group 99: an object given index 99 lays out room for a hundred, some
-            // 1.2 kB in V8, in both groups and the bind map, which thousands of filters made
-            // tens of megabytes of.
+            // of their own, past the groups the renderers set (0 to 3), the group map's and the
+            // GPU program's. It was group 99: an object given index 99 lays out room for a
+            // hundred, some 1.2 kB in V8, in both groups and the bind map, which thousands of
+            // filters made tens of megabytes of.
             let unmatchedGroup = MAX_SYSTEM_GROUP + 1;
+
+            for (const i in groupMap)
+            {
+                const group = Number(i);
+
+                if (group >= unmatchedGroup) unmatchedGroup = group + 1;
+            }
 
             if (gpuProgram)
             {

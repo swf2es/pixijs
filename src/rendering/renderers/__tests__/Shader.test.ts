@@ -2,6 +2,8 @@ import { GpuProgram } from '../gpu/shader/GpuProgram';
 import { Shader } from '../shared/shader/Shader';
 import { getGlProgram } from '@test-utils';
 
+import type { ShaderWithResources } from '../shared/shader/Shader';
+
 describe('Shader', () =>
 {
     it('should create correctly', () =>
@@ -83,5 +85,24 @@ describe('Shader', () =>
 
         expect(Object.keys(shader.groups)).toEqual(['0', '5', '6']);
         expect(shader._uniformBindMap[6]).toEqual({ 0: 'glOnly' });
+    });
+
+    it('should keep GL-only resources past the groups a group map names', () =>
+    {
+        // the group map is the descriptor's, which the typed overloads leave out
+        const shader = new Shader({
+            glProgram: getGlProgram(),
+            groupMap: { 4: { 0: 'mapped' } },
+            resources: {
+                mapped: { uScale: { value: 2, type: 'f32' } },
+                glOnly: { uOffset: { value: 1, type: 'f32' } },
+            }
+        } as ShaderWithResources);
+
+        expect(Object.keys(shader.groups)).toEqual(['4', '5']);
+        expect(shader._uniformBindMap[4]).toEqual({ 0: 'mapped' });
+        expect(shader._uniformBindMap[5]).toEqual({ 0: 'glOnly' });
+        expect(shader.resources.mapped.uniforms.uScale).toBe(2);
+        expect(shader.resources.glOnly.uniforms.uOffset).toBe(1);
     });
 });
