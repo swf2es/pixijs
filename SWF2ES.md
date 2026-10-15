@@ -156,11 +156,36 @@ The candidates from step 2, and what to take with them:
   is the riskiest: it changes when every WebGL renderer resolves, and
   relies on nothing reading the back buffer before it is presented but
   copies out of it.
-- The back buffer presented in place of what the canvas holds, not
-  blended over it (`GlBackBufferSystem`): with a preserved drawing
-  buffer, a frame's clear pixels showed the frame before. Stands alone.
+- `6c2293cf0` with its test fix `aa07d490c`: the back buffer presented
+  in place of what the canvas holds, not blended over it
+  (`GlBackBufferSystem`); with a preserved drawing buffer, a frame's
+  clear pixels showed the frame before. Stands alone.
 - The tests several commits add to `src/filters/__tests__/FilterSystem.test.ts`
   conflict with each other, trivially, when a commit is applied alone.
+
+The candidates from step 4, measured in swf2es's bench (memory held after
+a full collection, RX 7900 XTX):
+
+- `554cd835b` buffers whose contents live on the GPU alone, grown there
+  by a GPU-side copy that keeps the buffer object, and so the vertex
+  arrays, valid. Stands alone, but uses WebGL 2 calls without a guard;
+  upstream would want one, or a warning.
+- `7806b3598` every render group built again for a context given back
+  after a loss. Stands alone, and is worth offering by itself: any app
+  that keeps no CPU copies needs it.
+- `3e156b6bd` a built `GraphicsContext` letting go of its paths' shapes
+  (`releasePaths`). In swf2es it took 8.7 MB of a 196 MB heap in a busy
+  scene; a drawing built once and then only moved gains most.
+- `14bf6458e` with `98a4a5f27` and `1e88a603c`: batches kept on the GPU
+  alone in one shared arena (`BatcherPipe.gpuResident`), the rebuild for
+  a group that moves to another renderer, and the arena's trim. Array
+  buffers went from 170 to 41 MB and from 55 to 7 MB in the two benches,
+  frame times the same or better, GPU buffers up 21% in one bench for
+  sizing at 1.5×. It changes how batching owns its memory, so upstream it
+  is a design discussion rather than a plain pull request.
+
+`10980f636` (`Container.colorRoot`) is swf2es's own: Flash applies a
+filtered object's colour to its filters' output.
 
 ## Working on the fork
 
