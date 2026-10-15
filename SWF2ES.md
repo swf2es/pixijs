@@ -72,11 +72,29 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    keeps every colour, a render group's too, from what a filtered
    container draws, for its filter to apply to the output as Flash does. swf2es's `patches.ts` is gone,
    and so are the overwritten methods and the private-field casts.
-3. **Strip what swf2es does not use.** Likely candidates are the WebGPU
-   renderer, Pixi's text, its event system, accessibility and perhaps
-   the Canvas renderer. Each one goes only after checking that nothing in
-   swf2es reaches it. The aim is a smaller bundle and less code to keep
-   correct.
+3. **Strip what swf2es does not use** (done, by leaving it out of the
+   bundle rather than out of this repository). swf2es reaches more of Pixi
+   than first thought: it draws device text with Pixi's `Text`, takes the
+   pointer through Pixi's event system, and its renderer code has WebGPU
+   branches for a browser without WebGL. What it does not reach is
+   accessibility, `DOMContainer`, the Assets loaders and spritesheets,
+   bitmap and HTML text, tiling, nine-slice and particle containers.
+
+   So nothing is deleted here, and upstream merges stay as they are; `lib/`
+   is still the whole library. swf2es's `tools/pixijs.ts` builds the
+   bundle its pages load in place of `dist/pixi.mjs`: the plugins of this
+   repository's rollup configuration over an entry that exports only the
+   names swf2es imports and runs only the inits it needs (events,
+   rendering, filters, Graphics, Mesh and Text, and the WebGL renderer, in
+   the order Pixi's bundle runs them, so that a renderer's systems and
+   pipes keep theirs), tree-shaken under `package.json`'s `sideEffects`.
+   The WebGPU and Canvas renderers stay behind `autoDetectRenderer`'s
+   `import()`s, in chunks loaded only without WebGL. `unsafe-eval` is a
+   second entry beside it, sharing its modules.
+
+   `dist/pixi.mjs` went from 2,210 kB (473 kB gzipped) to 1,350 kB
+   (293 kB), and from 861 to 498 kB minified; the renderers' chunks are
+   another 149 kB not loaded with WebGL. The player cases draw the same.
 4. **Memory, the arena way** (done but for the tessellations):
    - one arena for batch vertices and indices instead of a growing
      batcher per instruction set (`BatcherPipe.gpuResident`,
