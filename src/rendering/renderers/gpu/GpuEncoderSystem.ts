@@ -383,7 +383,7 @@ export class GpuEncoderSystem implements System
         for (const i in shader.groups)
         {
             // resources that only exist for the other backend (e.g. GL-fallback uniforms,
-            // parked in group 99 by Shader.from) have no entry in this program's layout —
+            // parked in a group past the program's by Shader.from) have no entry in its layout —
             // there is nothing to sync or bind for them
             if (!program.layout[i as unknown as number]) continue;
 

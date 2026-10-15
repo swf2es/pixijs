@@ -160,6 +160,12 @@ export type ShaderFromResources = (GlShaderFromWith | GpuShaderFromWith)
 & Omit<ShaderWithResources, 'glProgram' | 'gpuProgram'>;
 
 /**
+ * The highest bind group the renderers set on a shader themselves: the filter system's 0 and 1,
+ * a mesh's 0 to 2 on WebGPU, within the 4 groups every WebGPU device allows.
+ */
+const MAX_SYSTEM_GROUP = 3;
+
+/**
  * The Shader class is an integral part of the PixiJS graphics pipeline.
  * Central to rendering in PixiJS are two key elements: A [shader] and a [geometry].
  * The shader incorporates a {@link GlProgram} for WebGL or a {@link GpuProgram} for WebGPU,
@@ -330,6 +336,12 @@ export class Shader extends EventEmitter<{'destroy': Shader}>
         {
             groups = {};
             groupMap ||= {};
+            // Resources no WGSL binding names (all of them without a GPU program) go to a group
+            // of their own, past the groups the renderers set (0 to 3) and the GPU program's.
+            // It was group 99: an object given index 99 lays out room for a hundred, some
+            // 1.2 kB in V8, in both groups and the bind map, which thousands of filters made
+            // tens of megabytes of.
+            let unmatchedGroup = MAX_SYSTEM_GROUP + 1;
 
             if (gpuProgram)
             {
@@ -341,6 +353,7 @@ export class Shader extends EventEmitter<{'destroy': Shader}>
                     groupMap[data.group][data.binding] = data.name;
 
                     nameHash[data.name] = data;
+                    unmatchedGroup = Math.max(unmatchedGroup, data.group + 1);
                 });
             }
 
@@ -361,18 +374,18 @@ export class Shader extends EventEmitter<{'destroy': Shader}>
                 }
 
                 // build out a dummy bind group..
-                if (!groups[99])
+                if (!groups[unmatchedGroup])
                 {
-                    groups[99] = new BindGroup();
-                    this._ownedBindGroups.push(groups[99]);
+                    groups[unmatchedGroup] = new BindGroup();
+                    this._ownedBindGroups.push(groups[unmatchedGroup]);
                 }
                 // Yes i know this is a little strange, but wil line up the shaders neatly
                 // basically we want to be driven by how webGPU does things.
                 // so making a fake group will work and not affect gpu as it means no gpu shader was provided..
-                nameHash[i] = { group: 99, binding: bindTick, name: i };
+                nameHash[i] = { group: unmatchedGroup, binding: bindTick, name: i };
 
-                groupMap[99] = groupMap[99] || {};
-                groupMap[99][bindTick] = i;
+                groupMap[unmatchedGroup] = groupMap[unmatchedGroup] || {};
+                groupMap[unmatchedGroup][bindTick] = i;
 
                 bindTick++;
             }
