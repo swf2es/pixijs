@@ -151,6 +151,9 @@ export class BindGroup
 
     protected onResourceChange(resource: BindResource)
     {
+        // Destroyed by an earlier listener of the same change, which still reaches this one.
+        if (!this.resources) return;
+
         this._dirty = true;
 
         // A destroyed resource must not stay bound — null the slot. Consumers tolerate the
