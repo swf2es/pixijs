@@ -143,6 +143,23 @@ export class GlBackBufferSystem implements System<GlBackBufferOptions>
         });
     }
 
+    /** Whether the back buffer is multisampled, where the context can be. */
+    public get antialias(): boolean
+    {
+        return this._antialias;
+    }
+
+    /** Set otherwise, the back buffer is made anew at the next render: a texture's samples are fixed. */
+    public set antialias(value: boolean)
+    {
+        const antialias = value && this._renderer.context.supports.msaa;
+
+        if (antialias === this._antialias) return;
+
+        this._antialias = antialias;
+        this.destroy();
+    }
+
     /**
      * This is called before the RenderTargetSystem is started. This is where
      * we replace the target with the back buffer if required.
@@ -223,7 +240,8 @@ export class GlBackBufferSystem implements System<GlBackBufferOptions>
     {
         if (this._backBufferTexture)
         {
-            this._backBufferTexture.destroy();
+            // Its source too: the GL texture, the multisampled buffer and the render target with it.
+            this._backBufferTexture.destroy(true);
             this._backBufferTexture = null;
         }
     }
