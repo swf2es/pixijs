@@ -15,7 +15,11 @@ export function executeInstructions(renderGroup: RenderGroup, renderer: RenderPi
     for (let i = 0; i < instructionSet.instructionSize; i++)
     {
         const instruction = instructions[i];
+        const pipe = renderer[instruction.renderPipeId as keyof RenderPipes] as InstructionPipe<any>;
+        const next = (pipe.execute as (instruction: unknown, set: unknown) => number | void)
+            .call(pipe, instruction, instructionSet);
 
-        (renderer[instruction.renderPipeId as keyof RenderPipes] as InstructionPipe<any>).execute(instruction);
+        // a filter that reused its kept output: on from its pop, past the object it did not draw
+        if (typeof next === 'number') i = next - 1;
     }
 }

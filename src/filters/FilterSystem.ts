@@ -66,6 +66,12 @@ export interface FilterInstruction extends Instruction
     container?: Container,
     renderables?: Renderable[],
     filterEffect: FilterEffect,
+    /**
+     * A push's matching pop, by its index in the instruction set: where drawing goes on when the
+     * push reuses its filter's kept output (FilterPipe).
+     * @internal
+     */
+    popIndex?: number,
 }
 
 /** How far a filter region's edge may be from a texel and still be taken as on it. */
@@ -76,13 +82,20 @@ const TEXEL_SNAP = 1e-6;
  * This class holds various properties that are used during the filter application process.
  * @internal
  */
-class FilterData
+export class FilterData
 {
     /**
      * Indicates whether the filter should be skipped.
      * @type {boolean}
      */
     public skip = false;
+
+    /**
+     * The output its filter kept from an earlier run and gave back to draw again (Filter.reusedOutput):
+     * the object was not drawn, nor the filter run. Null when drawn as usual.
+     * @internal
+     */
+    public reused: Texture | null = null;
 
     /**
      * The texture to which the filter is applied.
@@ -251,9 +264,12 @@ export class FilterSystem implements System
     /**
      * Pushes a filter instruction onto the filter stack.
      * @param instruction - The instruction containing the filter effect and container.
+     * @param mayReuse - Whether the caller can go on from the matching pop: then a lone filter's kept
+     * output may be drawn again in place of the object (Filter.reusedOutput).
+     * @returns Whether it reuses the kept output, the object not to be drawn.
      * @internal
      */
-    public push(instruction: FilterInstruction)
+    public push(instruction: FilterInstruction, mayReuse = false): boolean
     {
         const renderer = this.renderer;
 
@@ -264,6 +280,7 @@ export class FilterSystem implements System
         const filterData = this._pushFilterData();
 
         filterData.skip = false;
+        filterData.reused = null;
 
         filterData.filters = filters as Filter[];
         filterData.container = instruction.container;
@@ -279,7 +296,7 @@ export class FilterSystem implements System
         {
             filterData.skip = true;
 
-            return;
+            return false;
         }
 
         const bounds = filterData.bounds;
@@ -290,7 +307,7 @@ export class FilterSystem implements System
 
         if (filterData.skip)
         {
-            return;
+            return false;
         }
 
         const previousFilterData = this._getPreviousFilterData();
@@ -313,9 +330,26 @@ export class FilterSystem implements System
             colorTextureSource.height
         );
 
+        // A lone filter that kept its output from an unchanged object gives it back: nothing is drawn
+        // into an input, nor run, and the caller goes on from the matching pop (FilterPipe), which
+        // draws the output again. Not where the filter blends with what is behind, which changes.
+        if (mayReuse && !filterData.blendRequired && filterData.firstEnabledIndex === filterData.lastEnabledIndex)
+        {
+            const reused = filters[filterData.firstEnabledIndex].reusedOutput(this, filterData);
+
+            if (reused)
+            {
+                filterData.reused = reused;
+
+                return true;
+            }
+        }
+
         // set all the filter data
 
         this._setupFilterTextures(filterData, bounds, renderer, previousFilterData);
+
+        return false;
     }
 
     /**
@@ -444,6 +478,23 @@ export class FilterSystem implements System
         // if we are skipping this filter then we just do nothing :D
         if (filterData.skip)
         {
+            return;
+        }
+
+        // its kept output, drawn again as its filter drew it the time it was kept
+        if (filterData.reused)
+        {
+            const reused = filterData.reused;
+
+            filterData.reused = null;
+            this._activeFilterData = filterData;
+            this._globalFilterBindGroup.setResource(reused.source.style, 2);
+            this._globalFilterBindGroup.setResource(
+                (this._emptyBackTexture ??= new Texture({ source: new TextureSource() })).source, 3);
+            this.applyFilter(
+                filterData.filters[filterData.firstEnabledIndex], reused, filterData.outputRenderSurface, false
+            );
+
             return;
         }
 

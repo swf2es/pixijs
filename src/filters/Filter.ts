@@ -11,7 +11,7 @@ import type {
 } from '../rendering/renderers/shared/shader/Shader';
 import type { BLEND_MODES } from '../rendering/renderers/shared/state/const';
 import type { Texture } from '../rendering/renderers/shared/texture/Texture';
-import type { FilterSystem } from './FilterSystem';
+import type { FilterData, FilterSystem } from './FilterSystem';
 
 /**
  * The options to use when creating a new filter.
@@ -228,6 +228,20 @@ export class Filter extends Shader
      * @param output - The target to output to.
      * @param clearMode - Should the output be cleared before rendering to it
      */
+    /**
+     * The output this filter kept from an earlier run on the same input, if it may be drawn again in
+     * place of drawing the object into an input and running the filter: null, as here, to run it. Only
+     * a lone enabled filter that needs no back texture is asked, before anything is drawn (FilterSystem).
+     * @param _filterManager - The filter system.
+     * @param _filterData - What the push measured: the bounds, the resolution.
+     * @returns The kept output, or null.
+     * @internal
+     */
+    public reusedOutput(_filterManager: FilterSystem, _filterData: FilterData): Texture | null
+    {
+        return null;
+    }
+
     public apply(
         filterManager: FilterSystem,
         input: Texture,
