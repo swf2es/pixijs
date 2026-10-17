@@ -10,13 +10,13 @@ import { ViewableBuffer } from '../../../utils/data/ViewableBuffer';
 import { deprecation, v8_3_4 } from '../../../utils/logging/deprecation';
 import { BigPool } from '../../../utils/pool/PoolGroup';
 import { type GPUData } from '../../view/ViewContainer';
+import { BatchableGraphics } from './BatchableGraphics';
 import { buildContextBatches } from './utils/buildContextBatches';
 
 import type { GlBuffer } from '../../../rendering/renderers/gl/buffer/GlBuffer';
 import type { Buffer } from '../../../rendering/renderers/shared/buffer/Buffer';
 import type { System } from '../../../rendering/renderers/shared/system/System';
 import type { Renderer } from '../../../rendering/renderers/types';
-import type { BatchableGraphics } from './BatchableGraphics';
 import type { GraphicsContext } from './GraphicsContext';
 
 /**
@@ -71,6 +71,47 @@ function compactGeometryData(gpuContext: GpuGraphicsContext): void
 
     data.uvs = white ? zeros.subarray(0, uvs) : new Float32Array(data.uvs);
     data.indices = vertices.length / 2 <= 0x10000 ? new Uint16Array(data.indices) : new Uint32Array(data.indices);
+}
+
+/**
+ * Gives `gpuContext` the tessellation `built` holds, as buildContextBatches would build it again from
+ * the same shapes, and a batch for each of its batches over it. A compacted tessellation's indices and
+ * UVs are shared, as nothing changes them once built (a rebuild starts from new arrays, reset); its
+ * positions are copied in the precision `batchable` keeps them in (compactGeometryData). One left as
+ * built is copied, to be compacted as a build's is.
+ * @param built - The GPU data of the context whose tessellation is taken, built.
+ * @param gpuContext - The GPU data to give it to, reset.
+ * @param batchable - Whether `gpuContext` is to be batched.
+ */
+function copyTessellation(built: GpuGraphicsContext, gpuContext: GpuGraphicsContext, batchable: boolean): void
+{
+    const from = built.geometryData;
+    const to: GraphicsGeometryData = Array.isArray(from.vertices)
+        ? {
+            vertices: from.vertices.slice(),
+            uvs: (from.uvs as number[]).slice(),
+            indices: (from.indices as number[]).slice(),
+        }
+        : {
+            vertices: batchable ? new Float64Array(from.vertices) : new Float32Array(from.vertices),
+            uvs: from.uvs,
+            indices: from.indices,
+        };
+
+    gpuContext.geometryData = to;
+
+    const batches = gpuContext.batches;
+
+    batches.length = 0;
+
+    for (let i = 0; i < built.batches.length; i++)
+    {
+        const batch = BigPool.get(BatchableGraphics);
+
+        built.batches[i].copyTo(batch);
+        batch.geometryData = to;
+        batches.push(batch);
+    }
 }
 
 /**
@@ -343,21 +384,20 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
                 gpuContext.reset();
             }
 
-            buildContextBatches(context, gpuContext);
+            const source = context.tessellationOf;
+            const built: GpuGraphicsContext | undefined = source && !source.dirty
+                ? source._gpuData[this._renderer.uid]
+                : undefined;
 
-            const batchMode = context.batchMode;
-
-            if (context.customShader || batchMode === 'no-batch')
+            if (built?.geometryData)
             {
-                gpuContext.isBatchable = false;
-            }
-            else if (batchMode === 'auto')
-            {
-                gpuContext.isBatchable = (gpuContext.geometryData.vertices.length < 400);
+                gpuContext.isBatchable = this._batchable(context, built.geometryData.vertices.length);
+                copyTessellation(built, gpuContext, gpuContext.isBatchable);
             }
             else
             {
-                gpuContext.isBatchable = true;
+                buildContextBatches(context, gpuContext);
+                gpuContext.isBatchable = this._batchable(context, gpuContext.geometryData.vertices.length);
             }
 
             compactGeometryData(gpuContext);
@@ -368,6 +408,20 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
         }
 
         return gpuContext;
+    }
+
+    /**
+     * Whether a context of `vertices` positions is batched, by its batch mode.
+     * @param context - The context.
+     * @param vertices - How many numbers its positions are.
+     */
+    private _batchable(context: GraphicsContext, vertices: number): boolean
+    {
+        const batchMode = context.batchMode;
+
+        if (context.customShader || batchMode === 'no-batch') return false;
+
+        return batchMode === 'auto' ? vertices < 400 : true;
     }
 
     /**

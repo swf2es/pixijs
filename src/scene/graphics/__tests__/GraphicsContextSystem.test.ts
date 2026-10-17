@@ -83,6 +83,51 @@ describe('GraphicsContextSystem', () =>
         renderer.destroy();
     });
 
+    it('should take a built context\'s tessellation rather than tessellate the same shapes again', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const contexts = renderer.graphicsContext;
+        const alone = star(40, 'no-batch');
+        const batched = star(40, 'batch');
+        const fresh = plain(contexts.updateGpuContext(star(40, 'batch')).geometryData);
+        const freshBatches = contexts.updateGpuContext(star(40, 'batch')).batches.length;
+
+        batched.tessellationOf = alone;
+
+        // not yet built, it tessellates its own shapes
+        const own = contexts.updateGpuContext(batched);
+
+        expect(plain(own.geometryData)).toEqual(fresh);
+
+        // the other built, it takes that one's geometry, compacted for a batch, as 32-bit floats were kept
+        contexts.updateGpuContext(alone);
+        batched.dirty = true;
+
+        const taken = contexts.updateGpuContext(batched);
+
+        const shared = plain(contexts.updateGpuContext(alone).geometryData);
+
+        expect(taken.isBatchable).toBe(true);
+        expect(taken.geometryData.vertices).toBeInstanceOf(Float64Array);
+        expect(plain(taken.geometryData)).toEqual(shared);
+        expect(shared.vertices).toEqual(fresh.vertices.map((v) => Math.fround(v)));
+        expect(shared.indices).toEqual(fresh.indices);
+        // what no build changes once built is shared, not copied
+        expect(taken.geometryData.indices).toBe(contexts.updateGpuContext(alone).geometryData.indices);
+        expect(taken.geometryData.uvs).toBe(contexts.updateGpuContext(alone).geometryData.uvs);
+        expect(taken.batches).toHaveLength(freshBatches);
+        expect(taken.batches.every((batch) => batch.geometryData === taken.geometryData)).toBe(true);
+        expect(taken.batches[0].attributeSize).toBe(fresh.vertices.length / 2);
+
+        // drawn, as a batch would draw it
+        const stage = new Container();
+
+        stage.addChild(new Graphics(batched), new Graphics(alone));
+        renderer.render(stage);
+
+        renderer.destroy();
+    });
+
     it('should leave a small context as it was built', async () =>
     {
         const renderer = await getWebGLRenderer();

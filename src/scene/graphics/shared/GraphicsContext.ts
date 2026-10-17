@@ -152,6 +152,13 @@ export class GraphicsContext extends EventEmitter<{
     public dirty = true;
     /** The batch mode for this graphics context. It can be 'auto', 'batch', or 'no-batch'. */
     public batchMode: BatchMode = 'auto';
+    /**
+     * A context drawing the same shapes as this one, whose tessellation this one takes once that one is
+     * built for the renderer, rather than tessellating its shapes again: a copy of it in another batch
+     * mode, say. Its instructions must give the same geometry as this one's.
+     * @advanced
+     */
+    public tessellationOf: GraphicsContext | null = null;
     /** @internal */
     public instructions: GraphicsInstructions[] = [];
     /**
@@ -1302,6 +1309,7 @@ export class GraphicsContext extends EventEmitter<{
         this._bounds = null;
         this._stateStack = null;
         this.customShader = null;
+        this.tessellationOf = null;
         this._transform = null;
     }
 }
