@@ -170,8 +170,10 @@ describe('GraphicsContextSystem', () =>
         renderer.render(stage);
         expect(contexts.getContextRenderData(context)).toBe(data);
 
-        // the GPU's copy gone, as a lost context leaves it: packed again, the same
-        data.batcher.geometry.buffers[0]._gpuData[renderer.uid] = null;
+        // the GPU's copy gone, unloaded as Pixi's collection or a lost context lets it go: packed again, the same
+        const attributes = data.batcher.geometry.buffers[0];
+
+        attributes.unload();
 
         const again = contexts.getContextRenderData(context);
 

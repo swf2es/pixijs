@@ -29,6 +29,13 @@ import type { WebGLRenderer } from '../WebGLRenderer';
  */
 export class GlBufferSystem implements System
 {
+    /**
+     * How many times buffers have lost their GL copy, unloaded or with the context: what holds on to
+     * a buffer's GPU copy need check it again only once this moves.
+     * @internal
+     */
+    public losses = 0;
+
     /** @ignore */
     public static extension = {
         type: [
@@ -78,6 +85,7 @@ export class GlBufferSystem implements System
     protected contextChange(): void
     {
         this._gl = this._renderer.gl;
+        this.losses++;
 
         this.destroyAll(true);
         this._maxBindings = this._renderer.limits.maxUniformBindings;
@@ -391,6 +399,7 @@ export class GlBufferSystem implements System
         const glBuffer = buffer._gpuData[this._renderer.uid] as GlBuffer;
 
         if (!glBuffer) return;
+        this.losses++;
         if (!contextLost) this._gl.deleteBuffer(glBuffer.buffer);
     }
 

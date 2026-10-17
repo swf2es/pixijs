@@ -202,6 +202,12 @@ export class GraphicsContextRenderData
      * @internal
      */
     public _dropped = false;
+    /**
+     * The renderer's count of buffer losses (GlBufferSystem.losses) when the GPU was last found to
+     * hold what it packed, or -1: while the count stands, it still does.
+     * @internal
+     */
+    public _residentAt = -1;
 
     public init(options: BatcherOptions)
     {
@@ -360,6 +366,7 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
             batcher.geometry.buffers[0]._releaseData(batcher.attributeBuffer.float32View);
             batcher.geometry.indexBuffer._releaseData(batcher.indexBuffer);
             graphicsData._dropped = true;
+            graphicsData._residentAt = -1;
         }
 
         packed.length = 0;
@@ -508,11 +515,19 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
      */
     private _isResident(graphicsData: GraphicsContextRenderData): boolean
     {
-        const geometry = graphicsData.batcher?.geometry;
+        // checked once after it is dropped, then trusted while no buffer has lost its GL copy since
+        const losses = (this._renderer as { buffer?: { losses?: number } }).buffer?.losses ?? -1;
 
-        return !!geometry
+        if (losses >= 0 && graphicsData._residentAt === losses) return true;
+
+        const geometry = graphicsData.batcher?.geometry;
+        const resident = !!geometry
             && this._isUploaded(geometry.buffers[0])
             && this._isUploaded(geometry.indexBuffer);
+
+        if (resident && losses >= 0) graphicsData._residentAt = losses;
+
+        return resident;
     }
 
     private _isUploaded(buffer: Buffer): boolean

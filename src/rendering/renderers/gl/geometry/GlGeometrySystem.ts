@@ -32,6 +32,9 @@ const topologyToGlMap = {
 export class GlGeometryGpuData implements GPUData
 {
     public vaoCache: Record<string, WebGLVertexArrayObject>;
+    /** The program last bound with, and its VAO: a geometry is drawn with one program, draw after draw. */
+    public lastProgram: GlProgram | null = null;
+    public lastVao: WebGLVertexArrayObject | null = null;
 
     constructor()
     {
@@ -41,6 +44,8 @@ export class GlGeometryGpuData implements GPUData
     public destroy(): void
     {
         this.vaoCache = Object.create(null);
+        this.lastProgram = null;
+        this.lastVao = null;
     }
 }
 
@@ -240,7 +245,21 @@ export class GlGeometrySystem implements System
 
     protected getVao(geometry: Geometry, program: GlProgram): WebGLVertexArrayObject
     {
-        return geometry._gpuData[this._renderer.uid]?.vaoCache[program._key] || this.initGeometryVao(geometry, program);
+        const gpuData = geometry._gpuData[this._renderer.uid] as GlGeometryGpuData | undefined;
+
+        // the last program's VAO, without the lookup by key every draw of every geometry made
+        if (gpuData?.lastProgram === program) return gpuData.lastVao;
+
+        const vao = gpuData?.vaoCache[program._key] || this.initGeometryVao(geometry, program);
+        const data = geometry._gpuData[this._renderer.uid] as GlGeometryGpuData | undefined;
+
+        if (data)
+        {
+            data.lastProgram = program;
+            data.lastVao = vao;
+        }
+
+        return vao;
     }
 
     /**
