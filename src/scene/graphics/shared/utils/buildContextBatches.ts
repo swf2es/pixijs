@@ -171,8 +171,12 @@ function addShapePathToGeometryData(
 {
     const { vertices, uvs, indices } = geometryData;
 
-    shapePath.shapePrimitives.forEach(({ shape, transform: matrix, holes }) =>
+    // indexed loops, not forEach: every shape of every context built comes through here
+    const primitives = shapePath.shapePrimitives;
+
+    for (let p = 0; p < primitives.length; p++)
     {
+        const { shape, transform: matrix, holes } = primitives[p];
         const points: number[] = [];
         const build = shapeBuilders[shape.type];
         // TODO - this can be cached...
@@ -182,7 +186,7 @@ function addShapePathToGeometryData(
 
         if (!build.build(shape, points))
         {
-            return;
+            continue;
         }
 
         const indexOffset = indices.length;
@@ -204,11 +208,18 @@ function addShapePathToGeometryData(
 
                 const holeArrays = getHoleArrays(holes);
 
-                holeArrays.forEach((holePoints) =>
+                for (let h = 0; h < holeArrays.length; h++)
                 {
+                    const holePoints = holeArrays[h];
+
                     holeIndices.push(otherPoints.length / 2);
-                    otherPoints.push(...holePoints);
-                });
+
+                    // appended by index: a spread of a long hole's points is slow, and too many overflow the stack
+                    for (let k = 0; k < holePoints.length; k++)
+                    {
+                        otherPoints.push(holePoints[k]);
+                    }
+                }
 
                 triangulateWithHoles(otherPoints, holeIndices, vertices, 2, vertOffset, indices, indexOffset);
             }
@@ -264,7 +275,7 @@ function addShapePathToGeometryData(
         graphicsBatch.topology = topology;
 
         batches.push(graphicsBatch);
-    });
+    }
 }
 
 function getHoleArrays(holePrimitives: ShapePrimitiveWithHoles[])

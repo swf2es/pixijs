@@ -174,10 +174,13 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
 
         // do the work..
 
-        renderTarget.colorAttachments.forEach((attachment) =>
+        // by index: every render pass, many a frame under filters, comes through here
+        const colorAttachments = renderTarget.colorAttachments;
+
+        for (let i = 0; i < colorAttachments.length; i++)
         {
-            this._renderer.texture.unbind(attachment.texture);
-        });
+            this._renderer.texture.unbind(colorAttachments[i].texture);
+        }
 
         const gl = this._renderer.gl;
 

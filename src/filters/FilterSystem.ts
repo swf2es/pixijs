@@ -152,6 +152,21 @@ class FilterData
 }
 
 /**
+ * Whether every filter of a list is disabled, an empty list too: by index, as every filtered object
+ * asks it as it is pushed and popped, each frame.
+ * @param filters - The filters.
+ */
+function allDisabled(filters: readonly Filter[]): boolean
+{
+    for (let i = 0; i < filters.length; i++)
+    {
+        if (filters[i].enabled) return false;
+    }
+
+    return true;
+}
+
+/**
  * System that manages the filter pipeline
  * @category rendering
  * @advanced
@@ -260,7 +275,7 @@ export class FilterSystem implements System
         const rootAntialias = colorTextureSource.antialias;
 
         // if there are no filters, or all of them disabled, we skip the pass
-        if (filters.every((filter) => !filter.enabled))
+        if (allDisabled(filters))
         {
             filterData.skip = true;
 
@@ -347,7 +362,7 @@ export class FilterSystem implements System
         const rootAntialias = colorTextureSource.antialias;
 
         // if there are no filters, or all of them disabled, we skip the pass
-        if (filters.every((filter) => !filter.enabled))
+        if (allDisabled(filters))
         {
             filterData.skip = true;
 

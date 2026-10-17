@@ -259,18 +259,23 @@ export class GraphicsPipe implements RenderPipe<Graphics>
 
         const roundPixels = (this.renderer._roundPixels | graphics._roundPixels) as 0 | 1;
 
-        gpuData.batches = gpuContext.batches.map((batch) =>
+        const batches = gpuContext.batches;
+        const clones: BatchableGraphics[] = new Array(batches.length);
+
+        for (let i = 0; i < batches.length; i++)
         {
             const batchClone = BigPool.get(BatchableGraphics);
 
-            batch.copyTo(batchClone);
+            batches[i].copyTo(batchClone);
 
             batchClone.renderable = graphics;
 
             batchClone.roundPixels = roundPixels;
 
-            return batchClone;
-        });
+            clones[i] = batchClone;
+        }
+
+        gpuData.batches = clones;
     }
 
     public destroy()
