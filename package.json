@@ -62,7 +62,7 @@
     "@types/earcut": "^3.0.0",
     "@webgpu/types": "^0.1.69",
     "@xmldom/xmldom": "^0.8.15",
-    "earcut": "^3.0.2",
+    "earcut": "^3.2.4",
     "eventemitter3": "^5.0.1",
     "gifuct-js": "^2.1.2",
     "ismobilejs": "^1.1.1",
