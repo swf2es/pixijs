@@ -10,6 +10,8 @@ export class GlRenderTarget
     public width = -1;
     public height = -1;
     public msaa = false;
+    /** the samples its multisampled buffers were made with, 0 while it has none */
+    public samples = 0;
     /**
      * Tracks which mip level is currently attached to this render target's framebuffer.
      * This lets us skip redundant framebufferTexture2D calls on the common path.

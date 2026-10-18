@@ -114,4 +114,90 @@ describe('GlRenderTargetAdaptor', () =>
             filter._applying--;
             expect(blit).toHaveBeenCalledTimes(1);
         });
+
+    /** The samples each multisampled renderbuffer was last stored with, colour and depth-stencil. */
+    function storedSamples(): jest.SpyInstance
+    {
+        return jest.spyOn(renderer.gl as WebGL2RenderingContext, 'renderbufferStorageMultisample');
+    }
+
+    it('should multisample a target with the samples asked for, up to the most the context allows', async () =>
+    {
+        renderer = await getWebGLRenderer({});
+
+        const gl = renderer.gl as WebGL2RenderingContext;
+        const max = gl.getParameter(gl.MAX_SAMPLES) as number;
+        const { adaptor } = renderer.renderTarget;
+        const stored = storedSamples();
+
+        adaptor.msaaSamples = 2;
+        renderer.renderTarget.bind({ target: multisampled() });
+        renderer.renderTarget.finishRenderPass();
+
+        expect(stored.mock.calls.map((call) => call[1])).toEqual([Math.min(2, max)]);
+
+        stored.mockClear();
+        adaptor.msaaSamples = max * 4;
+        expect(adaptor.msaaSamples).toBe(max);
+
+        renderer.renderTarget.bind({ target: multisampled() });
+        renderer.renderTarget.finishRenderPass();
+
+        expect(stored.mock.calls.map((call) => call[1])).toEqual([max]);
+    });
+
+    it('should remake a target\'s buffers with new samples the next time it is drawn into', async () =>
+    {
+        renderer = await getWebGLRenderer({});
+
+        const { adaptor } = renderer.renderTarget;
+        const target = new RenderTarget({
+            colorTextures: [new TextureSource({ width: 64, height: 64, antialias: true })],
+            stencil: true,
+        });
+
+        adaptor.msaaSamples = 1;
+        renderer.renderTarget.bind({ target });
+        renderer.renderTarget.finishRenderPass();
+
+        const stored = storedSamples();
+
+        // as asked again: nothing remade
+        renderer.renderTarget.bind({ target });
+        renderer.renderTarget.finishRenderPass();
+        expect(stored).not.toHaveBeenCalled();
+
+        adaptor.msaaSamples = 2;
+        renderer.renderTarget.bind({ target });
+        renderer.renderTarget.finishRenderPass();
+
+        // colour and depth-stencil alike, or the framebuffer is incomplete
+        const samples = adaptor.msaaSamples;
+
+        expect(stored.mock.calls.map((call) => call[1])).toEqual([samples, samples]);
+        expect(renderer.renderTarget.getGpuRenderTarget(target).samples).toBe(samples);
+    });
+
+    it('should give the back buffer its own samples', async () =>
+    {
+        renderer = await getWebGLRenderer({});
+
+        const { adaptor } = renderer.renderTarget;
+        const backBuffer = multisampled();
+        const layer = multisampled();
+
+        jest.spyOn(renderer.backBuffer, 'isBackBufferTarget')
+            .mockImplementation((renderTarget) => renderTarget === backBuffer);
+
+        adaptor.msaaSamples = 1;
+        adaptor.backBufferSamples = 2;
+
+        renderer.renderTarget.bind({ target: backBuffer });
+        renderer.renderTarget.finishRenderPass();
+        renderer.renderTarget.bind({ target: layer });
+        renderer.renderTarget.finishRenderPass();
+
+        expect(renderer.renderTarget.getGpuRenderTarget(backBuffer).samples).toBe(adaptor.backBufferSamples);
+        expect(renderer.renderTarget.getGpuRenderTarget(layer).samples).toBe(adaptor.msaaSamples);
+    });
 });

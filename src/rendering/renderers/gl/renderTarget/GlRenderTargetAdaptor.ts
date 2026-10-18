@@ -38,6 +38,9 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
      * it unknown when external GL code may have changed the binding.
      */
     private _boundFramebuffer: WebGLFramebuffer | null | undefined = undefined;
+    private _maxSamples = 4;
+    private _msaaSamples = 4;
+    private _backBufferSamples = 4;
 
     public init(renderer: WebGLRenderer, renderTargetSystem: RenderTargetSystem<GlRenderTarget>): void
     {
@@ -45,6 +48,45 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
         this._renderTargetSystem = renderTargetSystem;
 
         renderer.runners.contextChange.add(this);
+    }
+
+    /**
+     * The samples a pixel of a multisampled target other than the back buffer has, as many as
+     * asked up to the most the context allows. Targets made before a change take it the next
+     * time they are drawn into.
+     */
+    public get msaaSamples(): number
+    {
+        return Math.min(this._msaaSamples, this._maxSamples);
+    }
+
+    public set msaaSamples(value: number)
+    {
+        this._msaaSamples = Math.max(1, Math.floor(value));
+    }
+
+    /**
+     * The samples a pixel of the back buffer has, as msaaSamples. Apart from the rest: the back
+     * buffer is one target the size of the screen, drawn into once a frame, while the others
+     * (filter inputs) are many and may each be drawn into every frame, so more samples cost
+     * little in the one and much in the others where memory bandwidth is short.
+     */
+    public get backBufferSamples(): number
+    {
+        return Math.min(this._backBufferSamples, this._maxSamples);
+    }
+
+    public set backBufferSamples(value: number)
+    {
+        this._backBufferSamples = Math.max(1, Math.floor(value));
+    }
+
+    /** The samples `renderTarget` is to be multisampled with. */
+    private _samplesFor(renderTarget: RenderTarget): number
+    {
+        return this._renderer.backBuffer?.isBackBufferTarget(renderTarget)
+            ? this.backBufferSamples
+            : this.msaaSamples;
     }
 
     public contextChange(): void
@@ -55,6 +97,10 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
 
         // Pre-compute draw buffers arrays for all possible MRT configurations
         const gl = this._renderer.gl;
+
+        this._maxSamples = this._renderer.context.webGLVersion === 2
+            ? (gl as WebGL2RenderingContext).getParameter(gl.MAX_SAMPLES) as number
+            : 4;
 
         this._drawBuffersCache = [];
 
@@ -170,6 +216,12 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
             {
                 throw new Error('[RenderTargetSystem] Rendering to mip levels requires WebGL2.');
             }
+        }
+
+        // A target whose buffers were made with other samples than are now asked for is remade.
+        if (gpuRenderTarget.msaa && gpuRenderTarget.samples !== this._samplesFor(renderTarget) && !renderTarget.isRoot)
+        {
+            this.resizeGpuRenderTarget(renderTarget);
         }
 
         // do the work..
@@ -676,6 +728,8 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
 
             const viewFramebuffer = glRenderTarget.framebuffer;
 
+            glRenderTarget.samples = this._samplesFor(renderTarget);
+
             gl.bindFramebuffer(gl.FRAMEBUFFER, viewFramebuffer);
 
             renderTarget.colorAttachments.forEach((colorAttachment, i) =>
@@ -696,7 +750,7 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
 
                 gl.renderbufferStorageMultisample(
                     gl.RENDERBUFFER,
-                    4,
+                    glRenderTarget.samples,
                     glInternalFormat,
                     source.pixelWidth,
                     source.pixelHeight
@@ -814,7 +868,7 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
         {
             gl.renderbufferStorageMultisample(
                 gl.RENDERBUFFER,
-                4,
+                glRenderTarget.samples,
                 gl.DEPTH24_STENCIL8,
                 glRenderTarget.width,
                 glRenderTarget.height
