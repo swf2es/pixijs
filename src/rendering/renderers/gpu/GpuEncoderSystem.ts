@@ -11,6 +11,7 @@ import type { Shader } from '../shared/shader/Shader';
 import type { UniformGroup } from '../shared/shader/UniformGroup';
 import type { State } from '../shared/state/State';
 import type { System } from '../shared/system/System';
+import type { GpuBindGroupEntry } from './BindGroupSystem';
 import type { GPU } from './GpuDeviceSystem';
 import type { GpuRenderTarget } from './renderTarget/GpuRenderTarget';
 import type { BindGroup } from './shader/BindGroup';
@@ -21,7 +22,7 @@ interface BoundBindGroupSlot
 {
     bindGroup: BindGroup;
     program: GpuProgram;
-    key: string;
+    entry: GpuBindGroupEntry;
 }
 
 /**
@@ -54,7 +55,7 @@ export class GpuEncoderSystem implements System
 
     private _gpu: GPU;
     /**
-     * Per-slot cache of the last (bindGroup, program, resource-key) bound to that
+     * Per-slot cache of the last (bindGroup, program, cache entry) bound to that
      * group index. All three prongs must match for the encoder to skip rebinding —
      * see {@link setBindGroup}. Slots are allocated once in the constructor and
      * mutated in place to avoid per-call allocation on the hot path.
@@ -87,7 +88,7 @@ export class GpuEncoderSystem implements System
 
         for (let i = 0; i < 16; i++)
         {
-            this._boundBindGroup[i] = { bindGroup: null, program: null, key: null };
+            this._boundBindGroup[i] = { bindGroup: null, program: null, entry: null };
         }
     }
 
@@ -103,7 +104,12 @@ export class GpuEncoderSystem implements System
         this.commandEncoder = this._renderer.gpu.device.createCommandEncoder();
     }
 
-    public beginRenderPass(gpuRenderTarget: GpuRenderTarget)
+    /**
+     * Ends any open pass and begins one on the target's descriptor.
+     * @param gpuRenderTarget - the target to render to
+     * @returns the begun pass
+     */
+    public beginRenderPass(gpuRenderTarget: GpuRenderTarget): GPURenderPassEncoder
     {
         this.endRenderPass();
 
@@ -111,6 +117,8 @@ export class GpuEncoderSystem implements System
 
         this._passEncoder = this.commandEncoder.beginRenderPass(gpuRenderTarget.descriptor);
         this.renderPassEncoder = this._passEncoder;
+
+        return this._passEncoder;
     }
 
     public endRenderPass()
@@ -329,28 +337,31 @@ export class GpuEncoderSystem implements System
 
         slot.bindGroup = null;
         slot.program = null;
-        slot.key = null;
+        slot.entry = null;
     }
 
     public setBindGroup(index: number, bindGroup: BindGroup, program: GpuProgram)
     {
         // The cached GPUBindGroup is only valid when the JS BindGroup, the program
-        // (its layout key), and the BindGroup's resource set (its _key) are all unchanged.
+        // (its layout key), and the BindGroup's resource set are all unchanged.
         // BindGroupSystem interns one GPUBindGroup per (bindGroup, program, groupIndex),
-        // so if any prong differs we must re-resolve and rebind.
+        // so if any prong differs we must re-resolve and rebind. A group drops its entry
+        // whenever a resource in it changes or a binding moves to a resource with a different
+        // id, so the entry stands for the resource set.
         const slot = this._boundBindGroup[index];
 
         if (slot.bindGroup === bindGroup
             && slot.program === program
-            && slot.key === bindGroup._key) return;
+            && slot.entry === bindGroup._gpuEntry) return;
 
         slot.bindGroup = bindGroup;
         slot.program = program;
-        slot.key = bindGroup._key;
 
         bindGroup._touch(this._renderer.gc.now);
 
         const gpuBindGroup = this._renderer.bindGroup.getBindGroup(bindGroup, program, index);
+
+        slot.entry = bindGroup._gpuEntry;
 
         this.renderPassEncoder.setBindGroup(index, gpuBindGroup);
     }
@@ -365,9 +376,9 @@ export class GpuEncoderSystem implements System
         // essentially only binding a single time for any buffers that are interleaved.
         const buffersToBind = this._renderer.pipeline.getBufferNamesToBind(geometry, program);
 
-        for (const i in buffersToBind)
+        for (let i = 0; i < buffersToBind.length; i++)
         {
-            this._setVertexBuffer(parseInt(i, 10), geometry.attributes[buffersToBind[i]].buffer);
+            this._setVertexBuffer(i, geometry.attributes[buffersToBind[i]].buffer);
         }
 
         if (geometry.indexBuffer)
@@ -379,15 +390,17 @@ export class GpuEncoderSystem implements System
     private _setShaderBindGroups(shader: Shader, skipSync?: boolean)
     {
         const program = shader.gpuProgram;
+        const layout = program.layout;
 
-        for (const i in shader.groups)
+        // indexed over the layout so no key list is built per draw. Groups outside the layout
+        // (e.g. GL-fallback uniforms, parked by Shader.from in a group past the program's) have
+        // nothing to sync or bind
+        for (let i = 0; i < layout.length; i++)
         {
-            // resources that only exist for the other backend (e.g. GL-fallback uniforms,
-            // parked in a group past the program's by Shader.from) have no entry in its layout —
-            // there is nothing to sync or bind for them
-            if (!program.layout[i as unknown as number]) continue;
+            const bindGroup = shader.groups[i];
 
-            const bindGroup = shader.groups[i] as BindGroup;
+            // a gap in a sparse layout, or a group this shader never filled
+            if (!layout[i] || !bindGroup) continue;
 
             // update any uniforms?
             if (!skipSync)
@@ -395,15 +408,18 @@ export class GpuEncoderSystem implements System
                 this._syncBindGroup(bindGroup);
             }
 
-            this.setBindGroup(i as unknown as number, bindGroup, program);
+            this.setBindGroup(i, bindGroup, program);
         }
     }
 
     private _syncBindGroup(bindGroup: BindGroup)
     {
-        for (const j in bindGroup.resources)
+        const resources = bindGroup.resources;
+        const keys = bindGroup._resourceKeys;
+
+        for (let i = 0; i < keys.length; i++)
         {
-            const resource = bindGroup.resources[j];
+            const resource = resources[keys[i]];
 
             // a destroyed buffer-like resource leaves a null slot (see BindGroup.onResourceChange)
             if (!resource) continue;
@@ -524,7 +540,7 @@ export class GpuEncoderSystem implements System
 
             slot.bindGroup = null;
             slot.program = null;
-            slot.key = null;
+            slot.entry = null;
             this._boundVertexBuffer[i] = null;
         }
 

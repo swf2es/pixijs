@@ -1,8 +1,9 @@
 # The swf2es fork of PixiJS
 
 This fork is the renderer under [swf2es](https://github.com/swf2es/swf2es),
-which plays SWF files in the browser. It starts from PixiJS **v8.21.0**,
-the version swf2es pins today, on the `swf2es` branch. The `dev` branch
+which plays SWF files in the browser. It started from PixiJS **v8.21.0**,
+on the `swf2es` branch, and has since merged upstream's `dev` up to
+**v8.22.0** and the fixes after it. The `dev` branch
 mirrors upstream and is where fixes meant for
 [pixijs/pixijs](https://github.com/pixijs/pixijs) are prepared.
 
@@ -49,8 +50,8 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    with a test: a Graphics drawn alone no longer rebuilds its render
    group; `BatchTextureArray.clear` deletes; a nested filtered render
    group's fast bounds are placed in its parent's; a filtered
-   descendant's padding counts in its ancestors' filter areas;
-   `_findFilterResolution` survives a resize; the filter system binds
+   descendant's padding counts in its ancestors' filter areas; the
+   filter system binds
    an empty back texture of its own; a filter region stays on the
    texels; `copyToTexture` is held to its texture and source;
    `getBackTexture` rounds; multisampled targets resolve only where and
@@ -144,7 +145,6 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
 Some of these are plain Pixi bugs or costs that any user would meet:
 
 - the render-group bounds placement;
-- the null `_findFilterResolution` after a resize;
 - batchers that never shrink;
 - geometry kept in JS arrays.
 
@@ -155,8 +155,8 @@ those pull requests themselves.
 The candidates from step 2, and what to take with them:
 
 - `ea897df18` a Graphics drawn alone keeps its group's build;
-  `5bf63284d` `BatchTextureArray.clear`; `87589b246`
-  `_findFilterResolution`; `2118d1e1f` nested render group bounds;
+  `5bf63284d` `BatchTextureArray.clear`; `2118d1e1f` nested render
+  group bounds;
   `077e25003` the filter system's own empty back texture;
   `5f4a9436f` `copyToTexture`'s clamp; `3da417e92` batcher trim;
   `36cf27b76` `Pool.trim`. Each stands alone.
@@ -204,6 +204,31 @@ a full collection, RX 7900 XTX):
 
 `10980f636` (`Container.colorRoot`) is swf2es's own: Flash applies a
 filtered object's colour to its filters' output.
+
+## Merged from upstream
+
+v8.22.0 and the fixes after it (pixijs/pixijs `dev` at `65552017d`) came in
+by a merge. Upstream had fixed some of what this fork had too, and its fixes
+were taken in place of ours:
+
+- `87589b246`, a filter's resolution found after a resize destroyed a
+  pooled texture: upstream's #12257 and #12259 find the enclosing filter
+  only as a filter is applied, while its input is held, and pass
+  textures are unbound from the filter system's bind group before the
+  pool destroys them.
+- The guard `6d8a811ac` added to `BindGroup.onResourceChange`, for a group
+  destroyed by an earlier listener of the same change: upstream's #12288
+  has it.
+- The check in `GpuEncoderSystem` that skipped groups parked past a
+  program's layout (`49798b715`): upstream's #12229 loops over the layout.
+
+What stays this fork's in the merged files: the filter output reuse in
+`FilterSystem.push`, deferred resolves while filters are set up and
+applied, the empty back texture of the filter system's own (now also
+bound when the pool evicts pass textures), the texel snap of a filter
+region, and the samples of each multisampled target (`msaaSamples`,
+`backBufferSamples`), which upstream's depth renderbuffer of a matching
+format now takes too.
 
 ## Working on the fork
 
