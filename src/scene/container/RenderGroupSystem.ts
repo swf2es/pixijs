@@ -37,9 +37,11 @@ export class RenderGroupSystem implements System
     /**
      * Called as a render group's instructions are about to be built again, its structure having changed:
      * for a renderer that times how long a group goes unchanged, as swf2es batches the Graphics of a
-     * group that has not been rebuilt for a while.
+     * group that has not been rebuilt for a while. `forced` is true where the build is only for a new
+     * context or another renderer, the group's structure as it was: no change of the group's own. A
+     * change found while its transforms are updated, in the same frame, is not told apart from it.
      */
-    public onBuildInstructions: ((renderGroup: RenderGroup) => void) | null = null;
+    public onBuildInstructions: ((renderGroup: RenderGroup, forced: boolean) => void) | null = null;
 
     private readonly _renderer: Renderer;
 
@@ -209,6 +211,7 @@ export class RenderGroupSystem implements System
         renderGroup.instructionSet.renderPipes = renderPipes;
 
         const last = renderGroup._contextOf as RenderGroupSystem | null;
+        let forced = false;
 
         if (last !== this || renderGroup._builtForContext !== this._context)
         {
@@ -218,6 +221,7 @@ export class RenderGroupSystem implements System
             // what that renderer's batchers keep
             if (last === this || (last && (last._keepsBatchesOnGpu() || this._keepsBatchesOnGpu())))
             {
+                forced = !renderGroup.structureDidChange;
                 renderGroup.structureDidChange = true;
             }
 
@@ -244,7 +248,7 @@ export class RenderGroupSystem implements System
             renderGroup.structureDidChange = false;
 
             // build the renderables
-            this._buildInstructions(renderGroup, renderer);
+            this._buildInstructions(renderGroup, renderer, forced);
         }
         else
         {
@@ -289,11 +293,15 @@ export class RenderGroupSystem implements System
      * @param renderPipes
      * @deprecated since 8.3.0
      */
-    private _buildInstructions(renderGroup: RenderGroup, renderPipes: RenderPipes): void;
-    private _buildInstructions(renderGroup: RenderGroup, renderer: Renderer): void;
-    private _buildInstructions(renderGroup: RenderGroup, rendererOrPipes: RenderPipes | Renderer): void
+    private _buildInstructions(renderGroup: RenderGroup, renderPipes: RenderPipes, forced?: boolean): void;
+    private _buildInstructions(renderGroup: RenderGroup, renderer: Renderer, forced?: boolean): void;
+    private _buildInstructions(
+        renderGroup: RenderGroup,
+        rendererOrPipes: RenderPipes | Renderer,
+        forced = false
+    ): void
     {
-        this.onBuildInstructions?.(renderGroup);
+        this.onBuildInstructions?.(renderGroup, forced);
 
         // rebuild the scene graph based on layers...
         const root = renderGroup.root;

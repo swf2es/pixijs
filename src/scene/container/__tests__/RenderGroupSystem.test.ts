@@ -120,6 +120,29 @@ describe('RenderGroupSystem', () =>
         renderer.destroy();
     });
 
+    it('should tell a build for a context given back from a change of the group in the same frame', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const root = new Container({ isRenderGroup: true });
+        const child = new Container({ isRenderGroup: true });
+        const builds: [Container, boolean][] = [];
+
+        child.addChild(new Sprite(Texture.WHITE));
+        root.addChild(new Sprite(Texture.WHITE), child);
+        renderer.renderGroup.onBuildInstructions = (group, forced) => builds.push([group.root, forced]);
+
+        renderer.render(root);
+        expect(builds).toEqual([[root, false], [child, false]]);
+
+        await loseAndRestoreContext(renderer);
+        builds.length = 0;
+        child.addChild(new Sprite(Texture.WHITE));
+        renderer.render(root);
+        expect(builds).toEqual([[root, true], [child, false]]);
+
+        renderer.destroy();
+    });
+
     it('should not build again a group another renderer rendered last', async () =>
     {
         const first = await getWebGLRenderer();
