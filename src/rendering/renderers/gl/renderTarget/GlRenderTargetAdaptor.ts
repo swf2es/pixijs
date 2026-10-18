@@ -52,8 +52,9 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
 
     /**
      * The samples a pixel of a multisampled target other than the back buffer has, as many as
-     * asked up to the most the context allows. Targets made before a change take it the next
-     * time they are drawn into.
+     * asked up to the most the context allows. A target made before a change is remade with
+     * them the next time a pass starts on it, which drops what it held: change it between
+     * frames, not while a target drawn into without a clear is still to be drawn into again.
      */
     public get msaaSamples(): number
     {
@@ -67,9 +68,9 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
 
     /**
      * The samples a pixel of the back buffer has, as msaaSamples. Apart from the rest: the back
-     * buffer is one target the size of the screen, drawn into once a frame, while the others
-     * (filter inputs) are many and may each be drawn into every frame, so more samples cost
-     * little in the one and much in the others where memory bandwidth is short.
+     * buffer is one target the size of the screen, while the others (filter inputs) are many and
+     * may each be drawn into every frame, so more samples cost little in the one and much in the
+     * others where memory bandwidth is short.
      */
     public get backBufferSamples(): number
     {
@@ -219,7 +220,7 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
         }
 
         // A target whose buffers were made with other samples than are now asked for is remade.
-        if (gpuRenderTarget.msaa && gpuRenderTarget.samples !== this._samplesFor(renderTarget) && !renderTarget.isRoot)
+        if (gpuRenderTarget.msaa && gpuRenderTarget.samples !== this._samplesFor(renderTarget))
         {
             this.resizeGpuRenderTarget(renderTarget);
         }

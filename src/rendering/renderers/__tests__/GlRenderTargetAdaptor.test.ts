@@ -115,7 +115,7 @@ describe('GlRenderTargetAdaptor', () =>
             expect(blit).toHaveBeenCalledTimes(1);
         });
 
-    /** The samples each multisampled renderbuffer was last stored with, colour and depth-stencil. */
+    /** A spy on the multisampled renderbuffers' storage: each call's second argument is its samples. */
     function storedSamples(): jest.SpyInstance
     {
         return jest.spyOn(renderer.gl as WebGL2RenderingContext, 'renderbufferStorageMultisample');
