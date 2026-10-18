@@ -59,14 +59,21 @@ export function generateProgram(gl: GlRenderingContext, program: GlProgram): GlP
     // GLSL 1.00: bind attributes sorted by name in ascending order
     // GLSL 3.00: don't change the attribute locations that where chosen by the compiler
     //            or assigned by the layout specifier in the shader source code
-    program._attributeData = extractAttributesFromGlProgram(
-        webGLProgram,
-        gl,
-        !(/^[ \t]*#[ \t]*version[ \t]+300[ \t]+es[ \t]*$/m).test(program.vertex)
-    );
+    // The program is shared by every renderer, and a link on a lost context finds no attributes or
+    // uniforms: what another renderer's link found is kept, for its vertex arrays and sync functions.
+    const lost = gl.isContextLost();
 
-    program._uniformData = getUniformData(webGLProgram, gl);
-    program._uniformBlockData = getUboData(webGLProgram, gl);
+    if (!lost || !program._attributeData)
+    {
+        program._attributeData = extractAttributesFromGlProgram(
+            webGLProgram,
+            gl,
+            !(/^[ \t]*#[ \t]*version[ \t]+300[ \t]+es[ \t]*$/m).test(program.vertex)
+        );
+    }
+
+    if (!lost || !program._uniformData) program._uniformData = getUniformData(webGLProgram, gl);
+    if (!lost || !program._uniformBlockData) program._uniformBlockData = getUboData(webGLProgram, gl);
 
     gl.deleteShader(glVertShader);
     gl.deleteShader(glFragShader);
