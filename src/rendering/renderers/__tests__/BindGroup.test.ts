@@ -333,14 +333,37 @@ describe('BindGroup', () =>
         expect(bindGroup._resourceKeys).toEqual([0]);
         expect(keyOf(bindGroup)).toBe(keyOf(new BindGroup({ 0: texture })));
 
-        // nothing tells the group the id moved until its owner does
+        // nothing tells the group the id moved until its owner binds it again
         const bindGroupKey = keyOf(bindGroup);
 
         texture.unload();
         expect(keyOf(bindGroup)).toBe(bindGroupKey);
 
-        bindGroup['onResourceChange'](texture);
+        bindGroup.setResourceUnwatched(texture, 0);
         expect(keyOf(bindGroup)).toBe(keyOf(new BindGroup({ 0: texture })));
+    });
+
+    it('should refresh an unwatched sampler and keep a resolved entry until its key changes', () =>
+    {
+        const style = new TextureStyle();
+        const bindGroup = new BindGroup();
+        const entry = {} as BindGroup['_gpuEntry'];
+
+        bindGroup.setResourceUnwatched(style, 1);
+        bindGroup._gpuEntry = entry;
+        bindGroup.setResourceUnwatched(style, 1);
+        expect(bindGroup._gpuEntry).toBe(entry);
+
+        style.scaleMode = 'nearest';
+        style.update();
+        bindGroup.setResourceUnwatched(style, 1);
+        expect(bindGroup._gpuEntry).toBeNull();
+        expect(style.listenerCount('change')).toBe(0);
+
+        const watched = new BindGroup();
+
+        watched.setResource(style, 1);
+        expect(keyOf(bindGroup)).toBe(keyOf(watched));
     });
 
     it('should give every distinct set of resources its own key', () =>

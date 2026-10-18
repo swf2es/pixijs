@@ -52,7 +52,9 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    group's fast bounds are placed in its parent's; a filtered
    descendant's padding counts in its ancestors' filter areas; the
    filter system binds
-   an empty back texture of its own; a filter region stays on the
+   an empty back texture of its own; pass-local filter textures and samplers
+   are rebound without change listeners, their resource keys refreshed on
+   each bind; a filter region stays on the
    texels; `copyToTexture` is held to its texture and source;
    `getBackTexture` rounds; multisampled targets resolve only where and
    when read; tessellations kept as typed arrays; packed arrays of

@@ -232,17 +232,22 @@ export class BindGroup
      * slot that is re-pointed on every draw, such as a pass that binds this frame's pooled texture,
      * draws, and puts a placeholder back. Use this form for such a slot, and re-point it before the
      * resource changes or is destroyed. A subclass that watches its own resources can instead pass
-     * every change of a resource it holds to `onResourceChange`.
+     * every change of a resource it holds to `onResourceChange`. Rebinding an unwatched resource
+     * also refreshes its key if its id changed since it was last bound.
      * @param resource - The resource to set.
      * @param index - The index to set the resource at.
      */
     public setResourceUnwatched(resource: BindResource, index: number): void
     {
         const currentResource = this.resources[index];
-
-        if (resource === currentResource) return;
-
         const id = resource._resourceId;
+
+        if (resource === currentResource)
+        {
+            if (this._keyedIds[index] !== id) this._rekey(index, id);
+
+            return;
+        }
 
         if (currentResource?._resourceType !== resource._resourceType) this._touchKeysValue = null;
 

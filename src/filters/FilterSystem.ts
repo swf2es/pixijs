@@ -220,6 +220,8 @@ export class FilterSystem implements System
         uOutputTexture: { value: new Float32Array(4), type: 'vec4<f32>' },
     });
 
+    // The texture/sampler slots are pass-local: rebound before drawing and cleared before pool
+    // evictions. Only the uniform slot needs change listeners between draws.
     private readonly _globalFilterBindGroup: BindGroup = new BindGroup({});
     private _activeFilterData: FilterData;
     private _passthroughFilter: Filter;
@@ -470,8 +472,8 @@ export class FilterSystem implements System
 
             this._activeFilterData = filterData;
             this._activeBackSource = this._getEmptyBackTexture().source;
-            this._globalFilterBindGroup.setResource(reused.source.style, 2);
-            this._globalFilterBindGroup.setResource(this._activeBackSource, 3);
+            this._globalFilterBindGroup.setResourceUnwatched(reused.source.style, 2);
+            this._globalFilterBindGroup.setResourceUnwatched(this._activeBackSource, 3);
 
             try
             {
@@ -660,9 +662,9 @@ export class FilterSystem implements System
         const bindGroup = this._globalFilterBindGroup;
         const empty = this._getEmptyBackTexture().source;
 
-        bindGroup.setResource(empty, 1);
-        bindGroup.setResource(empty.style, 2);
-        bindGroup.setResource(empty, 3);
+        bindGroup.setResourceUnwatched(empty, 1);
+        bindGroup.setResourceUnwatched(empty.style, 2);
+        bindGroup.setResourceUnwatched(empty, 3);
     }
 
     private _getEmptyBackTexture(): Texture
@@ -707,12 +709,12 @@ export class FilterSystem implements System
             // now lets update the output texture...
 
             // set bind group..
-            this._globalFilterBindGroup.setResource(input.source, 1);
-            this._globalFilterBindGroup.setResource(input.source.style, 2);
+            this._globalFilterBindGroup.setResourceUnwatched(input.source, 1);
+            this._globalFilterBindGroup.setResourceUnwatched(input.source.style, 2);
 
             if (this._activeBackSource)
             {
-                this._globalFilterBindGroup.setResource(this._activeBackSource, 3);
+                this._globalFilterBindGroup.setResourceUnwatched(this._activeBackSource, 3);
             }
 
             filter.groups[0] = this._globalFilterBindGroup;
@@ -1010,8 +1012,8 @@ export class FilterSystem implements System
         const previousBackSource = this._activeBackSource;
 
         this._activeBackSource = backTexture.source;
-        this._globalFilterBindGroup.setResource(inputTexture.source.style, 2);
-        this._globalFilterBindGroup.setResource(backTexture.source, 3);
+        this._globalFilterBindGroup.setResourceUnwatched(inputTexture.source.style, 2);
+        this._globalFilterBindGroup.setResourceUnwatched(backTexture.source, 3);
 
         try
         {

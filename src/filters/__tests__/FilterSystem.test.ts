@@ -11,6 +11,7 @@ import { Graphics } from '~/scene/graphics/shared/Graphics';
 
 import type { FilterEffect } from '../FilterEffect';
 import type { BindGroup } from '~/rendering/renderers/gpu/shader/BindGroup';
+import type { TextureStyle } from '~/rendering/renderers/shared/texture/TextureStyle';
 
 function filtered(): Container
 {
@@ -27,6 +28,26 @@ function filtered(): Container
 
 describe('FilterSystem', () =>
 {
+    it('should rebind pass textures and samplers without change listeners', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const stage = new Container();
+
+        stage.addChild(filtered());
+        renderer.render(stage);
+
+        const group = renderer.filter['_globalFilterBindGroup'] as BindGroup;
+
+        for (const index of [1, 2, 3])
+        {
+            const resource = group.resources[index] as TextureSource | TextureStyle;
+
+            expect(resource.listeners('change')).not.toContain(group['onResourceChange']);
+        }
+
+        renderer.destroy();
+    });
+
     it('should render a filter inside a filter after the pool destroyed its textures', async () =>
     {
         const renderer = await getWebGLRenderer();
