@@ -47,6 +47,10 @@ export class GlUniformGroupSystem implements System
     protected contextChange(gl: GlRenderingContext): void
     {
         this.gl = gl;
+        // A program's sync function was chosen from the uniforms its link found: one first linked while
+        // the context was lost found none, and would set none for good. Programs are linked again for a
+        // new context, so each is given its function again; the functions themselves stay cached.
+        this._uniformGroupSyncHash = {};
     }
 
     /**
