@@ -6,7 +6,8 @@ import { AlphaFilter, BlurFilter } from '~/filters';
 import { RenderTexture, Texture, TexturePool } from '~/rendering';
 import { Container, Graphics, Text } from '~/scene';
 
-import type { BindResource, Renderer } from '~/rendering';
+import type { FilterSystem } from '~/filters';
+import type { BindResource, Renderer, RenderSurface } from '~/rendering';
 
 describe('FilterSystem resize', () =>
 {
@@ -381,4 +382,76 @@ describe('FilterSystem resize', () =>
 
         expect(emptyTextureListenerCounts()).toEqual(afterFirstRenderer);
     });
+
+    it('should keep a blend filter\'s back texture bound when an earlier filter of the list makes the pool evict',
+        async () =>
+        {
+            const renderer = await getWebGLRenderer({ width: 301, height: 201, useBackBuffer: true });
+            // a screen-sized texture held across the resize, as a filter keeps its output, whose bucket the
+            // resize prunes: given back mid-list, the pool destroys it and evicts
+            let held = TexturePool.getOptimalTexture({ width: 301, height: 201 });
+            const seen: { backSource: BindResource, bound: BindResource }[] = [];
+
+            class GiveBackFilter extends AlphaFilter
+            {
+                public override apply(
+                    filterManager: FilterSystem, input: Texture, output: RenderSurface, clear: boolean
+                ): void
+                {
+                    if (held)
+                    {
+                        TexturePool.returnTexture(held);
+                        held = null;
+                    }
+
+                    filterManager.applyFilter(this, input, output, clear);
+                }
+            }
+
+            class BlendFilter extends AlphaFilter
+            {
+                public override apply(
+                    filterManager: FilterSystem, input: Texture, output: RenderSurface, clear: boolean
+                ): void
+                {
+                    filterManager.applyFilter(this, input, output, clear);
+                    seen.push({
+                        backSource: filterManager.activeBackTexture.source,
+                        bound: filterManager['_globalFilterBindGroup'].getResource(3),
+                    });
+                }
+            }
+
+            const giveBack = new GiveBackFilter({ alpha: 1 });
+            const blend = new BlendFilter({ alpha: 0.5, blendRequired: true });
+            const stage = new Container();
+            const group = new Container({ x: 20, y: 20 });
+
+            stage.addChild(new Graphics().rect(0, 0, 347, 229).fill(0x0000ff));
+            group.addChild(new Graphics().rect(0, 0, 100, 100).fill(0xff0000));
+            group.filters = [giveBack, blend];
+            stage.addChild(group);
+
+            try
+            {
+                renderer.resize(347, 229);
+                const evicts = jest.fn();
+
+                TexturePool.on('evict', evicts);
+                renderer.render(stage);
+                TexturePool.off('evict', evicts);
+
+                expect(evicts).toHaveBeenCalled();
+                expect(seen).toHaveLength(1);
+                expect(seen[0].backSource).not.toBe(Texture.EMPTY.source);
+                expect(seen[0].bound).toBe(seen[0].backSource);
+            }
+            finally
+            {
+                stage.destroy({ children: true });
+                giveBack.destroy();
+                blend.destroy();
+                renderer.destroy();
+            }
+        });
 });

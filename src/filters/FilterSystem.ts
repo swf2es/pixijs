@@ -230,6 +230,12 @@ export class FilterSystem implements System
      * that reads the back texture followed one that does not.
      */
     private _emptyBackTexture: Texture = null;
+    /**
+     * The back texture of the filter list being applied, bound again before each pass: a texture
+     * returned to the pool mid-list (a filter giving back an output it kept, whose bucket a resize
+     * pruned) makes the pool evict, which unbinds the pass textures, the back texture too.
+     */
+    private _activeBackSource: TextureSource | null = null;
 
     constructor(renderer: WebGLRenderer | WebGPURenderer)
     {
@@ -460,12 +466,23 @@ export class FilterSystem implements System
             const reused = filterData.reused;
 
             filterData.reused = null;
+            const previousBackSource = this._activeBackSource;
+
             this._activeFilterData = filterData;
+            this._activeBackSource = this._getEmptyBackTexture().source;
             this._globalFilterBindGroup.setResource(reused.source.style, 2);
-            this._globalFilterBindGroup.setResource(this._getEmptyBackTexture().source, 3);
-            this.applyFilter(
-                filterData.filters[filterData.firstEnabledIndex], reused, filterData.outputRenderSurface, false
-            );
+            this._globalFilterBindGroup.setResource(this._activeBackSource, 3);
+
+            try
+            {
+                this.applyFilter(
+                    filterData.filters[filterData.firstEnabledIndex], reused, filterData.outputRenderSurface, false
+                );
+            }
+            finally
+            {
+                this._activeBackSource = previousBackSource;
+            }
 
             return;
         }
@@ -692,6 +709,11 @@ export class FilterSystem implements System
             // set bind group..
             this._globalFilterBindGroup.setResource(input.source, 1);
             this._globalFilterBindGroup.setResource(input.source.style, 2);
+
+            if (this._activeBackSource)
+            {
+                this._globalFilterBindGroup.setResource(this._activeBackSource, 3);
+            }
 
             filter.groups[0] = this._globalFilterBindGroup;
 
@@ -974,12 +996,6 @@ export class FilterSystem implements System
     {
         const inputTexture = filterData.inputTexture;
 
-        const bounds = filterData.bounds;
-
-        const filters = filterData.filters;
-        const firstEnabled = filterData.firstEnabledIndex;
-        const lastEnabled = filterData.lastEnabledIndex;
-
         // get a BufferResource from the uniformBatch.
         // this will batch the shader uniform data and give us a buffer resource we can
         // set on our globalUniform Bind Group
@@ -991,8 +1007,29 @@ export class FilterSystem implements System
             backTexture = this._getEmptyBackTexture();
         }
 
+        const previousBackSource = this._activeBackSource;
+
+        this._activeBackSource = backTexture.source;
         this._globalFilterBindGroup.setResource(inputTexture.source.style, 2);
         this._globalFilterBindGroup.setResource(backTexture.source, 3);
+
+        try
+        {
+            this._applyFilterList(filterData, clear);
+        }
+        finally
+        {
+            this._activeBackSource = previousBackSource;
+        }
+    }
+
+    private _applyFilterList(filterData: FilterData, clear: boolean): void
+    {
+        const inputTexture = filterData.inputTexture;
+        const bounds = filterData.bounds;
+        const filters = filterData.filters;
+        const firstEnabled = filterData.firstEnabledIndex;
+        const lastEnabled = filterData.lastEnabledIndex;
 
         if (firstEnabled === lastEnabled)
         {
