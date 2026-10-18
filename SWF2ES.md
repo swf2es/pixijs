@@ -203,7 +203,9 @@ a full collection, RX 7900 XTX):
   is a design discussion rather than a plain pull request.
 
 `10980f636` (`Container.colorRoot`) is swf2es's own: Flash applies a
-filtered object's colour to its filters' output.
+filtered object's colour to its filters' output. So is the global
+`uWorldOffset` uniform: swf2es's advanced text places its glyphs on the
+stage's pixel grid, inside a filter's input too.
 
 ## Merged from upstream
 

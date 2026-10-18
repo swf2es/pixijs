@@ -24,6 +24,8 @@ export type GlobalUniformGroup = UniformGroup<{
     uWorldTransformMatrix: { value: Matrix; type: 'mat3x3<f32>' }
     uWorldColorAlpha: { value: Float32Array; type: 'vec4<f32>' }
     uResolution: { value: number[]; type: 'vec2<f32>' }
+    /** The offset taken off uWorldTransformMatrix's translation, as a filter's bounds' corner. */
+    uWorldOffset: { value: Float32Array; type: 'vec2<f32>' }
 }>;
 
 /**
@@ -167,6 +169,10 @@ export class GlobalUniformSystem implements System
         uniforms.uWorldTransformMatrix.tx -= globalUniformData.offset.x;
         uniforms.uWorldTransformMatrix.ty -= globalUniformData.offset.y;
 
+        // What was taken off, for a shader that places by the world's own grid inside a filter
+        uniforms.uWorldOffset[0] = globalUniformData.offset.x;
+        uniforms.uWorldOffset[1] = globalUniformData.offset.y;
+
         color32BitToUniform(
             globalUniformData.worldColor,
             uniforms.uWorldColorAlpha,
@@ -235,6 +241,8 @@ export class GlobalUniformSystem implements System
             // TODO - someone smart - set this to be a unorm8x4 rather than a vec4<f32>
             uWorldColorAlpha: { value: new Float32Array(4), type: 'vec4<f32>' },
             uResolution: { value: [0, 0], type: 'vec2<f32>' },
+            // Last, so that the uniform block keeps the layout the other shaders declare
+            uWorldOffset: { value: new Float32Array(2), type: 'vec2<f32>' },
         }, {
             isStatic: true,
         });
