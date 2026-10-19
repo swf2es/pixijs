@@ -671,6 +671,29 @@ describe('EventSystem', () =>
         expect(secondaryMoveGlobalSpy).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps an explicit input root after another object is rendered', async () =>
+    {
+        const renderer = await createRenderer();
+        const [stage, graphics] = createScene(false);
+        const other = new Container();
+        const down = jest.fn();
+
+        graphics.on('pointerdown', down);
+        renderer.render(other);
+        renderer.events.rootTarget = stage;
+        renderer.events['_onPointerDown'](
+            new PointerEvent('pointerdown', { clientX: 25, clientY: 25 })
+        );
+        expect(down).toHaveBeenCalledTimes(1);
+
+        renderer.events.rootTarget = null;
+        renderer.events['_onPointerDown'](
+            new PointerEvent('pointerdown', { clientX: 25, clientY: 25 })
+        );
+        expect(down).toHaveBeenCalledTimes(1);
+        renderer.destroy();
+    });
+
     it('should dispatch click events', async () =>
     {
         const renderer = await createRenderer();

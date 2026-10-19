@@ -8,6 +8,7 @@ import type { ExtensionMetadata } from '../extensions/Extensions';
 import type { PointData } from '../maths/point/PointData';
 import type { System } from '../rendering/renderers/shared/system/System';
 import type { Renderer } from '../rendering/renderers/types';
+import type { Container } from '../scene/container/Container';
 import type { PixiTouch } from './FederatedEvent';
 import type { EventMode } from './FederatedEventTarget';
 import type { FederatedMouseEvent } from './FederatedMouseEvent';
@@ -302,6 +303,9 @@ export class EventSystem implements System<EventSystemOptions>
      */
     public readonly rootBoundary: EventBoundary;
 
+    /** An explicit input root for hosts that render their stage in another worker. */
+    public rootTarget: Container | null = null;
+
     /**
      * Indicates whether the current device supports touch events according to the W3C Touch Events spec.
      * This is used to determine the appropriate event handling strategy.
@@ -508,6 +512,7 @@ export class EventSystem implements System<EventSystemOptions>
         EventsTicker.destroy();
         this.setTargetElement(null);
         this.renderer = null;
+        this.rootTarget = null;
         this._currentCursor = null;
     }
 
@@ -630,7 +635,7 @@ export class EventSystem implements System<EventSystemOptions>
     private _onPointerDown(nativeEvent: MouseEvent | PointerEvent | TouchEvent): void
     {
         if (!this.features.click) return;
-        this.rootBoundary.rootTarget = this.renderer.lastObjectRendered;
+        this.rootBoundary.rootTarget = this.rootTarget ?? this.renderer.lastObjectRendered;
 
         const events = this._normalizeToPointerData(nativeEvent);
 
@@ -670,7 +675,7 @@ export class EventSystem implements System<EventSystemOptions>
     private _onPointerMove(nativeEvent: MouseEvent | PointerEvent | TouchEvent): void
     {
         if (!this.features.move) return;
-        this.rootBoundary.rootTarget = this.renderer.lastObjectRendered;
+        this.rootBoundary.rootTarget = this.rootTarget ?? this.renderer.lastObjectRendered;
 
         EventsTicker.pointerMoved();
 
@@ -693,7 +698,7 @@ export class EventSystem implements System<EventSystemOptions>
     private _onPointerUp(nativeEvent: MouseEvent | PointerEvent | TouchEvent): void
     {
         if (!this.features.click) return;
-        this.rootBoundary.rootTarget = this.renderer.lastObjectRendered;
+        this.rootBoundary.rootTarget = this.rootTarget ?? this.renderer.lastObjectRendered;
 
         let target = nativeEvent.target;
 
@@ -725,7 +730,7 @@ export class EventSystem implements System<EventSystemOptions>
     private _onPointerOverOut(nativeEvent: MouseEvent | PointerEvent | TouchEvent): void
     {
         if (!this.features.click) return;
-        this.rootBoundary.rootTarget = this.renderer.lastObjectRendered;
+        this.rootBoundary.rootTarget = this.rootTarget ?? this.renderer.lastObjectRendered;
 
         const normalizedEvents = this._normalizeToPointerData(nativeEvent);
 
@@ -749,7 +754,7 @@ export class EventSystem implements System<EventSystemOptions>
     private _onContextMenu(nativeEvent: MouseEvent | PointerEvent): void
     {
         if (!this.features.click) return;
-        this.rootBoundary.rootTarget = this.renderer.lastObjectRendered;
+        this.rootBoundary.rootTarget = this.rootTarget ?? this.renderer.lastObjectRendered;
 
         const normalizedEvents = this._normalizeToPointerData(nativeEvent);
 
@@ -772,7 +777,7 @@ export class EventSystem implements System<EventSystemOptions>
         if (!this.features.wheel) return;
         const wheelEvent = this.normalizeWheelEvent(nativeEvent);
 
-        this.rootBoundary.rootTarget = this.renderer.lastObjectRendered;
+        this.rootBoundary.rootTarget = this.rootTarget ?? this.renderer.lastObjectRendered;
         this.rootBoundary.mapEvent(wheelEvent);
     }
 

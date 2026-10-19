@@ -244,3 +244,9 @@ format now takes too.
   swf2es.
 - A change that affects drawing names the swf2es player case or
   measurement that shows it.
+
+
+Worker-host input can pin `EventSystem.rootTarget` independently of the last
+rendered object. A synchronous BitmapData draw on the main renderer must not
+redirect the stage's pointer events while a worker renders the visible stage.
+The default null retains Pixi's last-rendered-object routing.
