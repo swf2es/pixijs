@@ -75,7 +75,11 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    `getContextRenderDataOnCpu`, `GlTextureSystem.bindForUpload`,
    `GlBufferSystem.resizeOnNextUpload` and `Container.colorRoot`, which
    keeps every colour, a render group's too, from what a filtered
-   container draws, for its filter to apply to the output as Flash does. swf2es's `patches.ts` is gone,
+   container draws, for its filter to apply to the output as Flash does.
+   `Container.visibilityRoot` keeps ancestor visibility, renderability and
+   culling from externally consumed mask geometry while retaining its transforms;
+   swf2es pairs it with `colorRoot` for Flash's masks.
+   swf2es's `patches.ts` is gone,
    and so are the overwritten methods and the private-field casts.
 3. **Strip what swf2es does not use** (done, by leaving it out of the
    bundle rather than out of this repository). swf2es reaches more of Pixi

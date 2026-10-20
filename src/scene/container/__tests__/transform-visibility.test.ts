@@ -3,6 +3,44 @@ import { updateRenderGroupTransforms } from '../utils/updateRenderGroupTransform
 
 describe('Transform Visibility', () =>
 {
+    it('should isolate a visibility root without losing ancestor transforms or its own flags', () =>
+    {
+        const root = new Container({ isRenderGroup: true });
+        const parent = root.addChild(new Container());
+        const mask = parent.addChild(new Container());
+        const part = mask.addChild(new Container());
+
+        parent.position.set(20, 30);
+        parent.visible = false;
+        parent.renderable = false;
+        parent.culled = true;
+        updateRenderGroupTransforms(root.renderGroup, true);
+        expect(part.globalDisplayStatus).toBe(0);
+
+        root.renderGroup.structureDidChange = false;
+        mask.visibilityRoot = true;
+        expect(root.renderGroup.structureDidChange).toBeTrue();
+        updateRenderGroupTransforms(root.renderGroup, true);
+        expect(part.globalDisplayStatus).toBe(0b111);
+        expect(part.relativeGroupTransform.tx).toBe(20);
+        expect(part.relativeGroupTransform.ty).toBe(30);
+        expect(parent.globalDisplayStatus).toBe(0);
+
+        mask.visible = false;
+        updateRenderGroupTransforms(root.renderGroup, true);
+        expect(part.globalDisplayStatus).toBe(0b101);
+        mask.visible = true;
+        part.renderable = false;
+        updateRenderGroupTransforms(root.renderGroup, true);
+        expect(part.globalDisplayStatus).toBe(0b110);
+        part.renderable = true;
+
+        mask.visibilityRoot = false;
+        updateRenderGroupTransforms(root.renderGroup, true);
+        expect(part.globalDisplayStatus).toBe(0);
+        root.destroy({ children: true });
+    });
+
     it('should not cause a rebuild if visibility is changed on a layer', async () =>
     {
         const root = new Container({ isRenderGroup: true });

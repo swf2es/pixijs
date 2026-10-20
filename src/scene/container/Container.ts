@@ -942,6 +942,33 @@ export class Container<C extends ContainerChild = ContainerChild> extends EventE
     /** @internal */
     public globalDisplayStatus = 0b111; // 0b11 | 0b10 | 0b01 | 0b00
 
+    private _visibilityRoot = false;
+
+    /**
+     * Ignore ancestors' visibility, renderability and culling when collecting this subtree.
+     * Its own flags still apply. This lets externally consumed mask geometry keep its place
+     * in the transform tree even when its ancestors are hidden. Alpha is separate (`colorRoot`).
+     */
+    get visibilityRoot(): boolean
+    {
+        return this._visibilityRoot;
+    }
+
+    set visibilityRoot(value: boolean)
+    {
+        if (value === this._visibilityRoot) return;
+
+        this._visibilityRoot = value;
+        this._updateFlags |= UPDATE_VISIBLE;
+
+        if (this.parentRenderGroup)
+        {
+            this.parentRenderGroup.structureDidChange = true;
+        }
+
+        this._onUpdate();
+    }
+
     /** @internal */
     public readonly renderPipeId: string;
 

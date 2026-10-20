@@ -207,7 +207,9 @@ function updateColorBlendVisibility(
 
     if (updateFlags & UPDATE_VISIBLE)
     {
-        container.globalDisplayStatus = container.localDisplayStatus & parent.globalDisplayStatus;
+        container.globalDisplayStatus = container.visibilityRoot
+            ? container.localDisplayStatus
+            : container.localDisplayStatus & parent.globalDisplayStatus;
     }
 
     container._updateFlags = 0;
