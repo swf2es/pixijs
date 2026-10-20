@@ -43,6 +43,14 @@ export class RenderGroupSystem implements System
      */
     public onBuildInstructions: ((renderGroup: RenderGroup, forced: boolean) => void) | null = null;
 
+    /**
+     * Opts a group into deferring dirty instructions while invisible. Its owner must guarantee
+     * that no mask or render layer outside the group draws any of its contents. Transforms and
+     * onRender callbacks still run; obsolete instructions and batchers are released until reveal.
+     * Render roots and cached textures are never deferred.
+     */
+    public canDeferInvisibleGroup: ((renderGroup: RenderGroup) => boolean) | null = null;
+
     private readonly _renderer: Renderer;
 
     /** Counts the contexts the renderer has had: a group built for an earlier one is built again. */
@@ -208,6 +216,31 @@ export class RenderGroupSystem implements System
 
         renderGroup.runOnRender(renderer);
 
+        if (this._canDeferInvisibleGroup(renderGroup))
+        {
+            // Retire obsolete scene references and GPU batches, but keep transforms current for
+            // bounds and for a child rendered separately. The dirty flag survives until reveal.
+            if (renderGroup.instructionSet.renderPipes)
+            {
+                renderGroup.instructionSet.destroy();
+                renderGroup.instructionSet.reset();
+            }
+
+            renderGroup._contextOf = null;
+            renderGroup._builtForContext = -1;
+            renderGroup.structureDidChange = true;
+            clearList(renderGroup.childrenRenderablesToUpdate.list, 0);
+            updateRenderGroupTransforms(renderGroup);
+            renderGroup.childrenRenderablesToUpdate.index = 0;
+
+            for (let i = 0; i < renderGroup.renderGroupChildren.length; i++)
+            {
+                this._updateRenderGroups(renderGroup.renderGroupChildren[i]);
+            }
+
+            return;
+        }
+
         renderGroup.instructionSet.renderPipes = renderPipes;
 
         const last = renderGroup._contextOf as RenderGroupSystem | null;
@@ -269,6 +302,32 @@ export class RenderGroupSystem implements System
         {
             this._updateRenderGroups(renderGroup.renderGroupChildren[i]);
         }
+    }
+
+    private _canDeferInvisibleGroup(group: RenderGroup): boolean
+    {
+        if (!this.canDeferInvisibleGroup
+            || !group.renderGroupParent
+            || group.isCachedAsTexture
+            || group._parentCacheAsTextureRenderGroup
+            || (!group.structureDidChange && !group.childrenRenderablesToUpdate.index
+                && group._contextOf === this && group._builtForContext === this._context)
+            || !this.canDeferInvisibleGroup(group))
+        {
+            return false;
+        }
+
+        // Walk only to this render's root, whose parent render() temporarily detaches. A direct
+        // render of a hidden branch must not inherit visibility from the scene it came from.
+        for (let parent = group.root; parent; parent = parent.parent)
+        {
+            if (!parent.visible)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private _updateRenderables(renderGroup: RenderGroup)

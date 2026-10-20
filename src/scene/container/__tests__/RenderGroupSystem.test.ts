@@ -7,6 +7,101 @@ import { Sprite } from '~/scene/sprite/Sprite';
 
 describe('RenderGroupSystem', () =>
 {
+    it('should defer only opted-in dirty invisible groups and retire their old instructions', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const root = new Container({ isRenderGroup: true });
+        const hidden = root.addChild(new Container());
+        const child = hidden.addChild(new Container({ isRenderGroup: true }));
+        const sprite = child.addChild(new Sprite(Texture.WHITE));
+        const builds: Container[] = [];
+
+        renderer.renderGroup.onBuildInstructions = (group) => builds.push(group.root);
+        renderer.render(root);
+        hidden.visible = false;
+        child.addChild(new Sprite(Texture.WHITE));
+        builds.length = 0;
+        renderer.render(root);
+        expect(builds).toContain(child);
+
+        renderer.renderGroup.canDeferInvisibleGroup = (group) => group === child.renderGroup;
+        child.addChild(new Sprite(Texture.WHITE));
+        builds.length = 0;
+        renderer.render(root);
+        expect(builds).not.toContain(child);
+        expect(child.renderGroup.structureDidChange).toBeTrue();
+        expect(child.renderGroup.instructionSet.instructions).toHaveLength(0);
+        expect(child.renderGroup.instructionSet.renderables).toHaveLength(0);
+        expect(child.renderGroup.instructionSet.instructionSize).toBe(0);
+        expect(child.renderGroup.childrenRenderablesToUpdate.index).toBe(0);
+        expect(child.renderGroup._contextOf).toBeNull();
+        expect(child.renderGroup._builtForContext).toBe(-1);
+
+        sprite.x = 20;
+        renderer.render(root);
+        expect(sprite.worldTransform.tx).toBe(20);
+        hidden.visible = true;
+        renderer.render(root);
+        expect(builds).toContain(child);
+        expect(child.renderGroup.structureDidChange).toBeFalse();
+
+        root.destroy({ children: true });
+        renderer.destroy();
+    });
+
+    it('should retain a clean hidden group and rebuild a deferred group rendered as a root', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const root = new Container({ isRenderGroup: true });
+        const hidden = root.addChild(new Container());
+        const child = hidden.addChild(new Container({ isRenderGroup: true }));
+        const builds: Container[] = [];
+
+        child.addChild(new Sprite(Texture.WHITE));
+        renderer.renderGroup.canDeferInvisibleGroup = () => true;
+        renderer.renderGroup.onBuildInstructions = (group) => builds.push(group.root);
+        renderer.render(root);
+        const instructions = [...child.renderGroup.instructionSet.instructions];
+
+        hidden.visible = false;
+        renderer.render(root);
+        expect(child.renderGroup.instructionSet.instructions).toEqual(instructions);
+        expect(child.renderGroup.structureDidChange).toBeFalse();
+
+        child.addChild(new Sprite(Texture.WHITE));
+        renderer.render(root);
+        expect(child.renderGroup.structureDidChange).toBeTrue();
+        builds.length = 0;
+        renderer.render(child);
+        expect(builds).toEqual([child]);
+        expect(child.parent).toBe(hidden);
+        expect(child.renderGroup.structureDidChange).toBeFalse();
+
+        root.destroy({ children: true });
+        renderer.destroy();
+    });
+
+    it('should run hidden callbacks before deciding whether to defer', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const root = new Container({ isRenderGroup: true });
+        const child = root.addChild(new Container({ isRenderGroup: true, visible: false }));
+        const builds: Container[] = [];
+
+        child.addChild(new Sprite(Texture.WHITE));
+        renderer.renderGroup.canDeferInvisibleGroup = () => true;
+        renderer.renderGroup.onBuildInstructions = (group) => builds.push(group.root);
+        child.onRender = () =>
+        {
+            child.visible = true;
+        };
+        renderer.render(root);
+        expect(builds).toContain(child);
+
+        root.destroy({ children: true });
+        renderer.destroy();
+    });
+
     it('should reset childrenRenderablesToUpdate index between renders', async () =>
     {
         const renderer = await getWebGLRenderer();

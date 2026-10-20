@@ -67,7 +67,9 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    `BatcherPipe.batcherNameFor`, `batchersFor` and `takeBatchers`;
    `GraphicsContextSystem.onContextBuilt`, `GpuGraphicsContext.onReset`
    and `GraphicsPath.releaseInstructions`;
-   `RenderGroupSystem.onBuildInstructions`;
+   `RenderGroupSystem.onBuildInstructions` and `canDeferInvisibleGroup`
+   (opted-in dirty hidden groups release obsolete instructions and batchers until
+   reveal; their owner guarantees no external mask or render-layer consumers);
    `FilterSystem.filterAreaHook`, `measureFilterArea` and `activeBounds`;
    `fastGlobalBoundsHooks.onMask`; `GraphicsOptions.observeContext`;
    `getContextRenderDataOnCpu`, `GlTextureSystem.bindForUpload`,
