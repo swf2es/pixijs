@@ -6,6 +6,43 @@ import type { WebGLRenderer } from '../gl/WebGLRenderer';
 
 describe('GlBackBufferSystem', () =>
 {
+    it('should release its shader binding before quality changes or shutdown destroy the back buffer', async () =>
+    {
+        const renderer = await getWebGLRenderer({ useBackBuffer: true }) as WebGLRenderer;
+        const container = new Container();
+        const warn = jest.spyOn(console, 'warn').mockImplementation(() => { /* collected below */ });
+
+        try
+        {
+            for (let i = 0; i < 6; i++)
+            {
+                renderer.render({ container, clearColor: [1, 0, 0, 1] });
+                const retired = renderer.backBuffer['_backBufferTexture'].source;
+
+                renderer.backBuffer.antialias = !renderer.backBuffer.antialias;
+                expect(retired.destroyed).toBe(true);
+                expect(renderer.backBuffer['_bigTriangleShader'].resources.uTexture).not.toBe(retired);
+            }
+
+            renderer.render({ container, clearColor: [0, 1, 0, 1] });
+            const pixel = new Uint8Array(4);
+            const gl = renderer.gl;
+
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+            expect(Array.from(pixel)).toEqual([0, 255, 0, 255]);
+        }
+        finally
+        {
+            renderer.destroy();
+            container.destroy();
+            const warnings = warn.mock.calls.filter((args) => args.join(' ').includes('destroyed while still bound'));
+
+            warn.mockRestore();
+            expect(warnings).toHaveLength(0);
+        }
+    });
+
     it('should activate only when the target is a canvas element (rather than a render texture)', async () =>
     {
         const renderer = await getWebGLRenderer({}) as WebGLRenderer;

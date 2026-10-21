@@ -240,6 +240,8 @@ export class GlBackBufferSystem implements System<GlBackBufferOptions>
     {
         if (this._backBufferTexture)
         {
+            // Quality changes retire this texture while the presentation shader is reused.
+            this._bigTriangleShader.resources.uTexture = Texture.WHITE.source;
             // Its source too: the GL texture, the multisampled buffer and the render target with it.
             this._backBufferTexture.destroy(true);
             this._backBufferTexture = null;
