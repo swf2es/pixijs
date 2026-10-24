@@ -43,6 +43,71 @@ function plain(data: GraphicsGeometryData)
 
 describe('GraphicsContextSystem', () =>
 {
+    it('should coalesce dense identical primitives without changing geometry order', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const context = new GraphicsContext();
+        const count = 17000;
+
+        context.batchMode = 'batch';
+
+        for (let i = 0; i < count; i++)
+        {
+            context.rect(i * 3, 0, 2, 2);
+        }
+
+        context.fill({ color: 0x336699, alpha: 0.5 });
+
+        const { batches, geometryData: data } = renderer.graphicsContext.updateGpuContext(context);
+
+        expect(batches).toHaveLength(1);
+        expect(batches[0].attributeSize).toBe(count * 4);
+        expect(batches[0].indexSize).toBe(count * 6);
+        expect(data.indices).toBeInstanceOf(Uint32Array);
+
+        const first = Array.from(data.indices).slice(0, 6);
+
+        for (let i = 0; i < count; i++)
+        {
+            for (let j = 0; j < 6; j++)
+            {
+                expect(data.indices[(i * 6) + j]).toBe((i * 4) + first[j]);
+            }
+        }
+
+        context.destroy();
+        renderer.destroy();
+    });
+
+    it('should preserve paint and topology boundaries between adjacent primitives', async () =>
+    {
+        const renderer = await getWebGLRenderer();
+        const context = new GraphicsContext();
+
+        context.batchMode = 'batch';
+        context.rect(0, 0, 2, 2).fill({ color: 0xff0000 });
+        context.rect(4, 0, 2, 2).fill({ color: 0xff0000 });
+        context.rect(8, 0, 2, 2).fill({ color: 0x0000ff });
+        context.rect(12, 0, 2, 2).fill({ color: 0x0000ff, alpha: 0.5 });
+        context.rect(16, 0, 2, 2).fill({ texture: Texture.EMPTY, color: 0x0000ff, alpha: 0.5 });
+        context.moveTo(20, 0).lineTo(20, 2).stroke({ color: 0x0000ff, alpha: 0.5, pixelLine: true });
+        context.rect(24, 0, 2, 2).fill({ color: 0xff0000 });
+
+        const { batches } = renderer.graphicsContext.updateGpuContext(context);
+
+        expect(batches).toHaveLength(6);
+        expect(batches.map((batch) => batch.baseColor)).toEqual([
+            0xff0000, 0x0000ff, 0x0000ff, 0x0000ff, 0x0000ff, 0xff0000,
+        ]);
+        expect(batches.map((batch) => batch.alpha)).toEqual([1, 1, 0.5, 0.5, 0.5, 1]);
+        expect(batches[3].texture).toBe(Texture.EMPTY);
+        expect(batches[4].topology).toBe('line-list');
+        expect(batches[5].topology).toBe('triangle-list');
+
+        context.destroy();
+        renderer.destroy();
+    });
+
     it('should keep a context drawn alone as 32-bit positions, zeros for UVs and 16-bit indices', async () =>
     {
         const renderer = await getWebGLRenderer();

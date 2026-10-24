@@ -20,7 +20,7 @@ import type { Topology } from '../../../../rendering/renderers/shared/geometry/c
 import type { ShapeBuildCommand } from '../buildCommands/ShapeBuildCommand';
 import type { ConvertedFillStyle, ConvertedStrokeStyle } from '../FillTypes';
 import type { GraphicsContext, TextureInstruction } from '../GraphicsContext';
-import type { GpuGraphicsContext } from '../GraphicsContextSystem';
+import type { GpuGraphicsContext, GraphicsGeometryData } from '../GraphicsContextSystem';
 import type { ShapePath, ShapePrimitiveWithHoles } from '../path/ShapePath';
 
 /**
@@ -140,21 +140,62 @@ function addTextureToGeometryData(
         textureUvs.x2, textureUvs.y2,
     );
 
-    const graphicsBatch = BigPool.get(BatchableGraphics);
+    appendBatch(batches, geometryData, indexOffset, vertOffset, texture, data.style, data.alpha, 'triangle-list');
+}
 
-    graphicsBatch.indexOffset = indexOffset;
-    graphicsBatch.indexSize = indices.length - indexOffset;
+/**
+ * Adjacent primitives of identical paint share a record, in their original triangle order. Dense
+ * vector fills can have hundreds of thousands of primitives, each of which otherwise gets a batch
+ * record and, when batched by a Graphics, another copy of that record.
+ * @param batches - The context's batches.
+ * @param geometryData - The geometry just appended to.
+ * @param indexOffset - The first appended index.
+ * @param vertOffset - The first appended vertex.
+ * @param texture - The primitive's texture.
+ * @param color - The primitive's colour.
+ * @param alpha - The primitive's alpha.
+ * @param topology - The primitive's topology.
+ */
+function appendBatch(
+    batches: BatchableGraphics[],
+    geometryData: GraphicsGeometryData,
+    indexOffset: number,
+    vertOffset: number,
+    texture: Texture,
+    color: number,
+    alpha: number,
+    topology: Topology,
+): void
+{
+    const previous = batches[batches.length - 1];
 
-    graphicsBatch.attributeOffset = vertOffset;
-    graphicsBatch.attributeSize = (vertices.length / 2) - vertOffset;
+    if (previous
+        && previous.geometryData === geometryData
+        && previous.texture === texture
+        && previous.baseColor === color
+        && previous.alpha === alpha
+        && previous.topology === topology
+        && previous.indexOffset + previous.indexSize === indexOffset
+        && previous.attributeOffset + previous.attributeSize === vertOffset)
+    {
+        previous.indexSize = geometryData.indices.length - previous.indexOffset;
+        previous.attributeSize = (geometryData.vertices.length / 2) - previous.attributeOffset;
 
-    graphicsBatch.baseColor = data.style;
-    graphicsBatch.alpha = data.alpha;
+        return;
+    }
 
-    graphicsBatch.texture = texture;
-    graphicsBatch.geometryData = geometryData;
+    const batch = BigPool.get(BatchableGraphics);
 
-    batches.push(graphicsBatch);
+    batch.indexOffset = indexOffset;
+    batch.indexSize = geometryData.indices.length - indexOffset;
+    batch.attributeOffset = vertOffset;
+    batch.attributeSize = (geometryData.vertices.length / 2) - vertOffset;
+    batch.baseColor = color;
+    batch.alpha = alpha;
+    batch.texture = texture;
+    batch.geometryData = geometryData;
+    batch.topology = topology;
+    batches.push(batch);
 }
 
 function addShapePathToGeometryData(
@@ -259,22 +300,7 @@ function addShapePathToGeometryData(
             buildSimpleUvs(uvs, uvsOffset, 2, (vertices.length / 2) - vertOffset);
         }
 
-        const graphicsBatch = BigPool.get(BatchableGraphics);
-
-        graphicsBatch.indexOffset = indexOffset;
-        graphicsBatch.indexSize = indices.length - indexOffset;
-
-        graphicsBatch.attributeOffset = vertOffset;
-        graphicsBatch.attributeSize = (vertices.length / 2) - vertOffset;
-
-        graphicsBatch.baseColor = style.color;
-        graphicsBatch.alpha = style.alpha;
-
-        graphicsBatch.texture = texture;
-        graphicsBatch.geometryData = geometryData;
-        graphicsBatch.topology = topology;
-
-        batches.push(graphicsBatch);
+        appendBatch(batches, geometryData, indexOffset, vertOffset, texture, style.color, style.alpha, topology);
     }
 }
 
