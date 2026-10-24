@@ -1,4 +1,5 @@
 import { TextureSource } from '../sources/TextureSource';
+import { Texture } from '../Texture';
 import { getWebGLRenderer } from '@test-utils';
 
 describe('TextureSource', () =>
@@ -78,6 +79,17 @@ describe('TextureSource', () =>
 
         expect(eventSpy).toHaveBeenCalledWith('resize', textureSource);
         expect(eventSpy).toHaveBeenNthCalledWith(1, 'update', textureSource);
+    });
+
+    it('a resize to the same pixels at another resolution should update the textures over it', () =>
+    {
+        const source = new TextureSource({ width: 96, height: 72, resolution: 2 });
+        const texture = new Texture({ source });
+
+        expect(source.resize(192, 144, 1)).toBe(false);
+        expect(source.pixelWidth).toBe(192);
+        expect(texture.frame.width).toBe(192);
+        expect(texture.frame.height).toBe(144);
     });
 
     it('should destroy the style it created itself', () =>

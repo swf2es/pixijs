@@ -653,6 +653,8 @@ export class TextureSource<T extends Record<string, any> = any> extends EventEmi
         const newPixelWidth = Math.round(width * resolution);
         const newPixelHeight = Math.round(height * resolution);
 
+        const resolutionChanged = resolution !== this._resolution;
+
         this.width = newPixelWidth / resolution;
         this.height = newPixelHeight / resolution;
 
@@ -660,6 +662,13 @@ export class TextureSource<T extends Record<string, any> = any> extends EventEmi
 
         if (this.pixelWidth === newPixelWidth && this.pixelHeight === newPixelHeight)
         {
+            // The same pixels at another resolution keep their storage, but the textures over
+            // this source take their frames from its width and height, which have changed.
+            if (resolutionChanged)
+            {
+                this.emit('resize', this);
+            }
+
             return false;
         }
 
