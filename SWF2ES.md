@@ -186,6 +186,11 @@ The candidates from step 2, and what to take with them:
   in place of what the canvas holds, not blended over it
   (`GlBackBufferSystem`); with a preserved drawing buffer, a frame's
   clear pixels showed the frame before. Stands alone.
+- `40e34efcb`: a `TextureSource` resized to the same pixels at another
+  resolution now emits `resize`, so the textures over it update their
+  frames (the back buffer's was cut off at the old size). That reallocates,
+  and so clears, GL render textures, and uploads resource-backed ones
+  again. Stands alone.
 - The tests several commits add to `src/filters/__tests__/FilterSystem.test.ts`
   conflict with each other, trivially, when a commit is applied alone.
 
