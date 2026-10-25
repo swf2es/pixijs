@@ -1,6 +1,7 @@
 import { ExtensionType } from '../../../extensions/Extensions';
 import { groupD8 } from '../../../maths/matrix/groupD8';
 import { Matrix } from '../../../maths/matrix/Matrix';
+import { Rectangle } from '../../../maths/shapes/Rectangle';
 import { canvasUtils } from '../../../rendering/renderers/canvas/utils/canvasUtils';
 import { Texture } from '../../../rendering/renderers/shared/texture/Texture';
 import { bgr2rgb } from '../../container/container-mixins/getGlobalMixin';
@@ -27,11 +28,12 @@ const tempTextureMatrix = new Matrix();
 const tempGradientMatrix = new Matrix();
 const tempPatternMatrix = new Matrix();
 const tempUvMatrix = new Matrix();
+const tempGeometryBounds = new Rectangle();
 
 function fillTriangles(
     context: CrossPlatformCanvasRenderingContext2D,
-    vertices: number[],
-    indices: number[]
+    vertices: ArrayLike<number>,
+    indices: ArrayLike<number>
 ): void
 {
     context.beginPath();
@@ -418,6 +420,46 @@ export class CanvasGraphicsAdaptor implements GraphicsAdaptor
                     contextSystem.setContextTransform(baseTransform, roundPixels === 1);
                 }
 
+                continue;
+            }
+
+            if (instruction.action === 'geometry')
+            {
+                const { geometry, transform, style } = instruction.data;
+                const alpha = style.alpha * groupAlpha;
+
+                if (alpha <= 0 || geometry.indices.length === 0) continue;
+
+                const points = geometry.vertices;
+                let minX = Infinity;
+                let minY = Infinity;
+                let maxX = -Infinity;
+                let maxY = -Infinity;
+
+                for (let p = 0; p < points.length; p += 2)
+                {
+                    minX = Math.min(minX, points[p]);
+                    minY = Math.min(minY, points[p + 1]);
+                    maxX = Math.max(maxX, points[p]);
+                    maxY = Math.max(maxY, points[p + 1]);
+                }
+
+                tempGeometryBounds.set(minX, minY, maxX - minX, maxY - minY);
+                const textureTransform = style.textureSpace === 'global' ? transform : null;
+                const textureMatrix = style.texture !== Texture.WHITE
+                    ? generateTextureFillMatrix(tempTextureMatrix, style, tempGeometryBounds, textureTransform)
+                    : null;
+                const currentTransform = tempGradientMatrix.copyFrom(baseTransform).append(transform);
+                const tint = multiplyHexColors(style.color, groupTint);
+                const canvasStyle = getCanvasStyle(style, tint, textureMatrix, currentTransform);
+
+                context.save();
+                context.globalAlpha = alpha;
+                context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty);
+                context.fillStyle = canvasStyle as string | CanvasPattern | CanvasGradient;
+                // One fill keeps internal triangle edges from receiving antialiasing or alpha twice.
+                fillTriangles(context, points, geometry.indices);
+                context.restore();
                 continue;
             }
 

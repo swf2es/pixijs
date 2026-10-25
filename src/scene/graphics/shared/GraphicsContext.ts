@@ -425,7 +425,7 @@ export class GraphicsContext extends EventEmitter<{
                 geometry,
                 transform,
                 style: this.fillStyle,
-                // Canvas and SVG need a path; GPU rendering never expands triangles into paths.
+                // SVG needs a path; rendering never expands triangles into paths.
                 get path() { return path ??= geometryPath(geometry, transform); },
             },
         });

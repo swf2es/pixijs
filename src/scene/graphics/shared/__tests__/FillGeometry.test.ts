@@ -1,7 +1,10 @@
 import { Matrix } from '../../../../maths/matrix/Matrix';
+import { CanvasGraphicsAdaptor } from '../../canvas/CanvasGraphicsAdaptor';
 import { GraphicsContext } from '../GraphicsContext';
 import { GpuGraphicsContext } from '../GraphicsContextSystem';
 import { buildContextBatches } from '../utils/buildContextBatches';
+import type { Graphics } from '../Graphics';
+import type { GraphicsPipeLike } from '../GraphicsPipe';
 
 const geometry = {
     vertices: new Float64Array([0, 0, 10, 0, 10, 10, 0, 10]),
@@ -10,6 +13,37 @@ const geometry = {
 
 describe('finished fill geometry', () =>
 {
+    it('paints the whole Canvas fill once, without alpha seams on internal triangle edges', () =>
+    {
+        const source = new GraphicsContext().fillGeometry(geometry, { color: 0x336699, alpha: 0.5 });
+        let fills = 0;
+        const canvas = {
+            globalAlpha: 1,
+            fillStyle: '',
+            save() {}, restore() {}, transform() {}, beginPath() {},
+            moveTo() {}, lineTo() {}, closePath() {},
+            fill() { fills++; },
+        };
+        const renderer = {
+            canvasContext: {
+                activeContext: canvas,
+                setContextTransform() {}, setBlendMode() {},
+            },
+        };
+        const renderable = {
+            context: source,
+            groupTransform: new Matrix(),
+            groupColorAlpha: 0xFFFFFFFF,
+            groupBlendMode: 'normal',
+        };
+
+        new CanvasGraphicsAdaptor().execute({ renderer } as unknown as GraphicsPipeLike,
+            renderable as unknown as Graphics);
+        expect(fills).toBe(1);
+        expect(canvas.globalAlpha).toBe(0.5);
+        source.destroy();
+    });
+
     it('keeps owned buffers across clones, path retirement and rebuilds', () =>
     {
         const context = new GraphicsContext().translate(20, 30).fillGeometry(geometry, 0x336699);
