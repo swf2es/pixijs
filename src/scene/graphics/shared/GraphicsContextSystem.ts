@@ -178,7 +178,14 @@ export class GpuGraphicsContext implements GPUData
         {
             (geometryData.indices as number[]).length = 0;
             geometryData.vertices.length = 0;
-            (geometryData.uvs as number[]).length = 0;
+            if (Array.isArray(geometryData.uvs))
+            {
+                geometryData.uvs.length = 0;
+            }
+            else
+            {
+                geometryData.uvs = [];
+            }
         }
         else
         {

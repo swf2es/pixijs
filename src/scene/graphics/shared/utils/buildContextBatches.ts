@@ -55,6 +55,9 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
 
     if (buildSharedGeometry(context, gpuContext)) return;
 
+    const zeroStrokeUvs = context.instructions.length > 0 && context.instructions.every((instruction) =>
+        instruction.action === 'stroke' && instruction.data.style.texture === Texture.WHITE);
+
     for (let i = 0; i < context.instructions.length; i++)
     {
         const instruction = context.instructions[i];
@@ -81,7 +84,7 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
 
             if (isStroke && hole)
             {
-                addShapePathToGeometryData(hole.shapePath, style, true, batches, geometryData);
+                addShapePathToGeometryData(hole.shapePath, style, true, batches, geometryData, zeroStrokeUvs);
             }
 
             if (hole)
@@ -90,8 +93,14 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
                 shapePath.shapePrimitives[shapePath.shapePrimitives.length - 1].holes = hole.shapePath.shapePrimitives;
             }
 
-            addShapePathToGeometryData(shapePath, style, isStroke, batches, geometryData);
+            addShapePathToGeometryData(shapePath, style, isStroke, batches, geometryData, zeroStrokeUvs);
         }
+    }
+
+    if (zeroStrokeUvs)
+    {
+        // Compaction would discard the temporary array in favour of these same zeros.
+        gpuContext.geometryData.uvs = getZeroUvs(geometryData.vertices.length);
     }
 }
 
@@ -368,7 +377,8 @@ function addShapePathToGeometryData(
         vertices: number[];
         uvs: number[];
         indices: number[];
-    }
+    },
+    zeroStrokeUvs = false,
 )
 {
     const { vertices, uvs, indices } = geometryData;
@@ -456,7 +466,7 @@ function addShapePathToGeometryData(
 
             buildUvs(vertices, 2, vertOffset, uvs, uvsOffset, 2, (vertices.length / 2) - vertOffset, textureMatrix);
         }
-        else
+        else if (!zeroStrokeUvs)
         {
             buildSimpleUvs(uvs, uvsOffset, 2, (vertices.length / 2) - vertOffset);
         }
