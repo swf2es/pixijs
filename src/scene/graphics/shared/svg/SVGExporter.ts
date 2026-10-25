@@ -36,6 +36,7 @@ export function graphicsContextToSvg(source: Graphics | GraphicsContext, precisi
 
         switch (inst.action)
         {
+            case 'geometry':
             case 'fill':
             {
                 const fillInst = inst as FillInstruction;

@@ -19,7 +19,7 @@ import type { Polygon } from '../../../../maths/shapes/Polygon';
 import type { Topology } from '../../../../rendering/renderers/shared/geometry/const';
 import type { ShapeBuildCommand } from '../buildCommands/ShapeBuildCommand';
 import type { ConvertedFillStyle, ConvertedStrokeStyle } from '../FillTypes';
-import type { GraphicsContext, TextureInstruction } from '../GraphicsContext';
+import type { GeometryInstruction, GraphicsContext, TextureInstruction } from '../GraphicsContext';
 import type { GpuGraphicsContext, GraphicsGeometryData } from '../GraphicsContextSystem';
 import type { ShapePath, ShapePrimitiveWithHoles } from '../path/ShapePath';
 
@@ -62,6 +62,10 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
             // add a quad!
             addTextureToGeometryData(instruction.data, batches, geometryData);
         }
+        else if (instruction.action === 'geometry')
+        {
+            addFinishedGeometry(instruction.data, batches, geometryData);
+        }
         else if (instruction.action === 'fill' || instruction.action === 'stroke')
         {
             const isStroke = instruction.action === 'stroke';
@@ -87,6 +91,60 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
             addShapePathToGeometryData(shapePath, style, isStroke, batches, geometryData);
         }
     }
+}
+
+function addFinishedGeometry(
+    data: GeometryInstruction['data'],
+    batches: BatchableGraphics[],
+    geometryData: { vertices: number[]; uvs: number[]; indices: number[]; }
+): void
+{
+    const { geometry, transform, style } = data;
+    if (geometry.indices.length === 0) return;
+
+    const { vertices, indices, uvs } = geometryData;
+    const vertOffset = vertices.length / 2;
+    const indexOffset = indices.length;
+    const points = geometry.vertices;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (let i = 0; i < points.length; i += 2)
+    {
+        const x = points[i];
+        const y = points[i + 1];
+
+        vertices.push(transform.a * x + transform.c * y + transform.tx,
+            transform.b * x + transform.d * y + transform.ty);
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+    }
+    for (let i = 0; i < geometry.indices.length; i++)
+    {
+        indices.push(vertOffset + geometry.indices[i]);
+    }
+
+    const count = points.length / 2;
+    const uvOffset = uvs.length / 2;
+    const texture = style.texture;
+
+    if (texture !== Texture.WHITE)
+    {
+        tempRect.set(minX, minY, maxX - minX, maxY - minY);
+        const matrix = generateTextureFillMatrix(tempTextureMatrix, style, tempRect, transform);
+
+        buildUvs(vertices, 2, vertOffset, uvs, uvOffset, 2, count, matrix);
+    }
+    else
+    {
+        buildSimpleUvs(uvs, uvOffset, 2, count);
+    }
+
+    appendBatch(batches, geometryData, indexOffset, vertOffset, texture, style.color, style.alpha, 'triangle-list');
 }
 
 function addTextureToGeometryData(

@@ -261,3 +261,11 @@ Worker-host input can pin `EventSystem.rootTarget` independently of the last
 rendered object. A synchronous BitmapData draw on the main renderer must not
 redirect the stage's pointer events while a worker renders the visible stage.
 The default null retains Pixi's last-rendered-object routing.
+
+`GraphicsContext.fillGeometry` accepts finished, immutable triangle buffers from a
+caller-owned tessellator. It uses the existing paint UV generation and batch,
+mask and filter pipeline. The buffers remain available after path retirement,
+unload and context restoration; clones borrow the same buffers. Canvas and SVG
+expand paths lazily. Tessellator selection, fill rules, memory limits and
+fallback caching stay with the caller. swf2es's opt-in native fill run passes all
+330 existing Flash reference cases; its default remains the JS path.

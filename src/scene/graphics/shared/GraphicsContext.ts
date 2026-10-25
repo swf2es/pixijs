@@ -12,6 +12,7 @@ import { type GpuGraphicsContext } from './GraphicsContextSystem';
 import { GraphicsPath } from './path/GraphicsPath';
 import { SVGParser } from './svg/SVGParser';
 import { toFillStyle, toStrokeStyle } from './utils/convertFillInputToFillStyle';
+import { geometryBounds, geometryContains, geometryPath, validateGeometry } from './utils/fillGeometry';
 import { getMaxMiterRatio } from './utils/getMaxMiterRatio';
 
 import type { PointData } from '../../../maths/point/PointData';
@@ -41,6 +42,31 @@ export interface FillInstruction
     data: { style: ConvertedFillStyle, path: GraphicsPath, hole?: GraphicsPath }
 }
 
+/**
+ * Finished triangle-list geometry. The caller owns these buffers and must keep them immutable
+ * for the lifetime of every context using them. They may not alias tessellator scratch memory.
+ * @advanced
+ * @category scene
+ */
+export interface FillGeometry
+{
+    vertices: Float32Array | Float64Array;
+    indices: Uint16Array | Uint32Array;
+}
+
+/** @internal */
+export interface GeometryInstruction
+{
+    action: 'geometry';
+    data: {
+        geometry: FillGeometry;
+        transform: Matrix;
+        style: ConvertedFillStyle;
+        readonly path: GraphicsPath;
+        hole?: GraphicsPath;
+    };
+}
+
 /** @internal */
 export interface StrokeInstruction
 {
@@ -68,7 +94,7 @@ export interface TextureInstruction
 }
 
 /** @internal */
-export type GraphicsInstructions = FillInstruction | StrokeInstruction | TextureInstruction;
+export type GraphicsInstructions = FillInstruction | StrokeInstruction | TextureInstruction | GeometryInstruction;
 
 const tempMatrix = new Matrix();
 
@@ -369,6 +395,41 @@ export class GraphicsContext extends EventEmitter<{
 
         this._initNextPathLocation();
         this._tick = 0;
+
+        return this;
+    }
+
+    /**
+     * Paints finished triangles through the ordinary Graphics batching, mask and filter pipeline.
+     * Buffers are borrowed immutably, including by clones; they remain available after unload or
+     * context loss. The current transform is captured. This does not consume the current path,
+     * and subsequent path strokes or cuts do not modify this geometry.
+     * @param geometry - Owned, immutable positions and triangle-list indices.
+     * @param style - The usual Graphics fill style.
+     * @advanced
+     */
+    public fillGeometry(geometry: FillGeometry, style?: FillInput): this
+    {
+        validateGeometry(geometry);
+        if (style !== undefined)
+        {
+            this._fillStyle = toFillStyle(style, GraphicsContext.defaultFillStyle);
+        }
+
+        const transform = this._transform.clone();
+        let path: GraphicsPath;
+
+        this.instructions.push({
+            action: 'geometry',
+            data: {
+                geometry,
+                transform,
+                style: this.fillStyle,
+                // Canvas and SVG need a path; GPU rendering never expands triangles into paths.
+                get path() { return path ??= geometryPath(geometry, transform); },
+            },
+        });
+        this.onUpdate();
 
         return this;
     }
@@ -1108,7 +1169,11 @@ export class GraphicsContext extends EventEmitter<{
             const instruction = this.instructions[i];
             const action = instruction.action;
 
-            if (action === 'fill')
+            if (instruction.action === 'geometry')
+            {
+                geometryBounds(instruction.data.geometry, instruction.data.transform, bounds);
+            }
+            else if (action === 'fill')
             {
                 const data = instruction.data as FillInstruction['data'];
 
@@ -1168,7 +1233,7 @@ export class GraphicsContext extends EventEmitter<{
         {
             const instruction = this.instructions[i];
 
-            if (instruction.action === 'texture') continue;
+            if (instruction.action === 'texture' || instruction.action === 'geometry') continue;
 
             instruction.data.path?.releaseShapes();
             instruction.data.hole?.releaseShapes();
@@ -1191,6 +1256,13 @@ export class GraphicsContext extends EventEmitter<{
         for (let k = 0; k < instructions.length; k++)
         {
             const instruction = instructions[k];
+
+            if (instruction.action === 'geometry')
+            {
+                if (geometryContains(instruction.data.geometry, instruction.data.transform, point)) return true;
+
+                continue;
+            }
 
             const data = instruction.data as FillInstruction['data'];
             const path = data.path;
