@@ -25,6 +25,7 @@ describe('finished fill geometry', () =>
             fill() { fills++; },
         };
         const renderer = {
+            globalUniforms: {},
             canvasContext: {
                 activeContext: canvas,
                 setContextTransform() {}, setBlendMode() {},
