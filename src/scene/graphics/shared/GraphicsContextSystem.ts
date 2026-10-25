@@ -29,6 +29,8 @@ export interface GraphicsGeometryData
     vertices: number[] | Float32Array | Float64Array;
     uvs: number[] | Float32Array;
     indices: number[] | Uint16Array | Uint32Array;
+    /** A standalone context's float precision, applied before a copy's world transform is packed. */
+    roundToFloat32?: boolean;
 }
 
 /** Shorter tessellations stay as they were built: a typed array costs some 100 bytes more than an array. */
@@ -43,17 +45,25 @@ let zeros = new Float32Array(1024);
  * they are, but 64-bit ones for a batched one, which are packed through its transform; UVs 32-bit
  * floats, or a view of shared zeros for a context without a texture; indices 16-bit integers where
  * the vertices are few enough. Only packing reads them, and a rebuild starts from new arrays (reset).
+ * Borrowed double positions retain their buffer and record float rounding for the attribute packer.
  * @param gpuContext - The context's GPU data, just built.
  */
 function compactGeometryData(gpuContext: GpuGraphicsContext): void
 {
     const data = gpuContext.geometryData;
 
-    if (!Array.isArray(data.vertices) || data.vertices.length < COMPACT_LEAST) return;
+    if (Array.isArray(data.vertices) && data.vertices.length < COMPACT_LEAST) return;
 
     const vertices = data.vertices;
 
-    data.vertices = gpuContext.isBatchable ? new Float64Array(vertices) : new Float32Array(vertices);
+    if (Array.isArray(vertices))
+    {
+        data.vertices = gpuContext.isBatchable ? new Float64Array(vertices) : new Float32Array(vertices);
+    }
+    else if (!gpuContext.isBatchable && vertices instanceof Float64Array && vertices.length >= COMPACT_LEAST)
+    {
+        data.roundToFloat32 = true;
+    }
 
     let white = true;
 
@@ -69,21 +79,26 @@ function compactGeometryData(gpuContext: GpuGraphicsContext): void
         zeros = new Float32Array(Math.max(uvs, zeros.length * 2));
     }
 
-    data.uvs = white ? zeros.subarray(0, uvs) : new Float32Array(data.uvs);
-    data.indices = vertices.length / 2 <= 0x10000 ? new Uint16Array(data.indices) : new Uint32Array(data.indices);
+    if (Array.isArray(data.uvs))
+    {
+        data.uvs = white ? zeros.subarray(0, uvs) : new Float32Array(data.uvs);
+    }
+    if (Array.isArray(data.indices))
+    {
+        data.indices = vertices.length / 2 <= 0x10000 ? new Uint16Array(data.indices) : new Uint32Array(data.indices);
+    }
 }
 
 /**
  * Gives `gpuContext` the tessellation `built` holds, as buildContextBatches would build it again from
  * the same shapes, and a batch for each of its batches over it. A compacted tessellation's indices and
  * UVs are shared, as nothing changes them once built (a rebuild starts from new arrays, reset); its
- * positions are copied in the precision `batchable` keeps them in (compactGeometryData). One left as
- * built is copied, to be compacted as a build's is.
+ * positions are shared too, with standalone float rounding recorded for the attribute packer. One
+ * left as built is copied, to be compacted as a build's is.
  * @param built - The GPU data of the context whose tessellation is taken, built.
  * @param gpuContext - The GPU data to give it to, reset.
- * @param batchable - Whether `gpuContext` is to be batched.
  */
-function copyTessellation(built: GpuGraphicsContext, gpuContext: GpuGraphicsContext, batchable: boolean): void
+function copyTessellation(built: GpuGraphicsContext, gpuContext: GpuGraphicsContext): void
 {
     const from = built.geometryData;
     const to: GraphicsGeometryData = Array.isArray(from.vertices)
@@ -93,9 +108,10 @@ function copyTessellation(built: GpuGraphicsContext, gpuContext: GpuGraphicsCont
             indices: (from.indices as number[]).slice(),
         }
         : {
-            vertices: batchable ? new Float64Array(from.vertices) : new Float32Array(from.vertices),
+            vertices: from.vertices,
             uvs: from.uvs,
             indices: from.indices,
+            roundToFloat32: from.roundToFloat32,
         };
 
     gpuContext.geometryData = to;
@@ -161,6 +177,7 @@ export class GpuGraphicsContext implements GPUData
         this.batches.length = 0;
 
         const geometryData = this.geometryData;
+        geometryData.roundToFloat32 = false;
 
         // a compacted tessellation is given new arrays to be built into again
         if (Array.isArray(geometryData.vertices))
@@ -399,7 +416,7 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
             if (built?.geometryData)
             {
                 gpuContext.isBatchable = this._batchable(context, built.geometryData.vertices.length);
-                copyTessellation(built, gpuContext, gpuContext.isBatchable);
+                copyTessellation(built, gpuContext);
             }
             else
             {

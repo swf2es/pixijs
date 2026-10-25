@@ -173,7 +173,7 @@ describe('GraphicsContextSystem', () =>
         const shared = plain(contexts.updateGpuContext(alone).geometryData);
 
         expect(taken.isBatchable).toBe(true);
-        expect(taken.geometryData.vertices).toBeInstanceOf(Float64Array);
+        expect(taken.geometryData.vertices).toBe(contexts.updateGpuContext(alone).geometryData.vertices);
         expect(plain(taken.geometryData)).toEqual(shared);
         expect(shared.vertices).toEqual(fresh.vertices.map((v) => Math.fround(v)));
         expect(shared.indices).toEqual(fresh.indices);

@@ -14,7 +14,7 @@ import type { Matrix } from '../../../../../maths/matrix/Matrix';
  * @internal
  */
 export function buildUvs(
-    vertices: number[],
+    vertices: ArrayLike<number>,
     verticesStride: number,
     verticesOffset: number,
 

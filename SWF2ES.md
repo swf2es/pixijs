@@ -269,3 +269,11 @@ unload and context restoration; clones borrow the same buffers. Canvas fills tri
 expands paths lazily. Tessellator selection, fill rules, memory limits and
 fallback caching stay with the caller. swf2es's opt-in native fill run passes all
 330 existing Flash reference cases; its default remains the JS path.
+
+Finished fills with identity transforms and contiguous views of one position
+buffer share it with the context's GPU data. A single fill shares its indices
+too. Immutable tessellation copies share positions, indices and UVs; rebuilding
+or destroying the source replaces its views without changing a copy's buffers.
+`BatchableGraphics.roundToFloat32` preserves standalone float rounding before a
+copy's world transform. Attribute packers, including swf2es's colour batcher,
+honour this flag so sharing double buffers does not change rendered coordinates.

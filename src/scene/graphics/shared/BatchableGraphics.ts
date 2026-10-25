@@ -50,6 +50,11 @@ export class BatchableGraphics implements DefaultBatchableMeshElement
         return this.geometryData.vertices;
     }
 
+    get roundToFloat32()
+    {
+        return this.geometryData.roundToFloat32 ?? false;
+    }
+
     get indices()
     {
         return this.geometryData.indices;

@@ -51,7 +51,11 @@ export interface DefaultBatchableQuadElement extends BatchableQuadElement, Defau
  * @category rendering
  * @advanced
  */
-export interface DefaultBatchableMeshElement extends BatchableMeshElement, DefaultBatchElements {}
+export interface DefaultBatchableMeshElement extends BatchableMeshElement, DefaultBatchElements
+{
+    /** Preserve standalone float precision while sharing double positions with a batched copy. */
+    roundToFloat32?: boolean;
+}
 
 /**
  * The default batcher is used to batch quads and meshes. This batcher will batch the following elements:
@@ -117,6 +121,7 @@ export class DefaultBatcher extends Batcher
         const ty = wt.ty;
 
         const { positions, uvs } = element;
+        const round = element.roundToFloat32;
 
         const argb = element.color;
 
@@ -127,8 +132,8 @@ export class DefaultBatcher extends Batcher
         {
             const i2 = i * 2;
 
-            const x = positions[i2];
-            const y = positions[(i2) + 1];
+            const x = round ? Math.fround(positions[i2]) : positions[i2];
+            const y = round ? Math.fround(positions[i2 + 1]) : positions[i2 + 1];
 
             float32View[index++] = (a * x) + (c * y) + tx;
             float32View[index++] = (d * y) + (b * x) + ty;

@@ -53,6 +53,8 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
     geometryData.vertices.length = 0;
     geometryData.uvs.length = 0;
 
+    if (buildSharedGeometry(context, gpuContext)) return;
+
     for (let i = 0; i < context.instructions.length; i++)
     {
         const instruction = context.instructions[i];
@@ -91,6 +93,103 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
             addShapePathToGeometryData(shapePath, style, isStroke, batches, geometryData);
         }
     }
+}
+
+/** Finished fills can share one immutable position buffer, including contiguous views of a layer. */
+function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsContext): boolean
+{
+    let first: Float32Array | Float64Array = null;
+    let length = 0;
+    let fills = 0;
+
+    for (const instruction of context.instructions)
+    {
+        if (instruction.action !== 'geometry' || !instruction.data.transform.isIdentity()) return false;
+
+        const { vertices, indices } = instruction.data.geometry;
+
+        if (indices.length === 0)
+        {
+            if (vertices.length !== 0) return false;
+
+            continue;
+        }
+
+        first ??= vertices;
+        if (vertices.constructor !== first.constructor
+            || vertices.buffer !== first.buffer
+            || vertices.byteOffset !== first.byteOffset + length * first.BYTES_PER_ELEMENT) return false;
+
+        length += vertices.length;
+        fills++;
+    }
+
+    if (!first) return false;
+
+    const data: GraphicsGeometryData = {
+        vertices: first instanceof Float64Array
+            ? new Float64Array(first.buffer, first.byteOffset, length)
+            : new Float32Array(first.buffer, first.byteOffset, length),
+        indices: [],
+        uvs: [],
+    };
+
+    gpuContext.geometryData = data;
+    let offset = 0;
+
+    for (const instruction of context.instructions)
+    {
+        const { geometry, style, transform } = (instruction as GeometryInstruction).data;
+
+        if (geometry.indices.length === 0) continue;
+
+        const points = geometry.vertices;
+        const count = points.length / 2;
+        const indexOffset = fills === 1 ? 0 : data.indices.length;
+
+        if (fills === 1)
+        {
+            data.indices = geometry.indices;
+        }
+        else
+        {
+            for (let i = 0; i < geometry.indices.length; i++)
+            {
+                (data.indices as number[]).push(offset + geometry.indices[i]);
+            }
+        }
+
+        if (style.texture !== Texture.WHITE)
+        {
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+
+            for (let i = 0; i < points.length; i += 2)
+            {
+                minX = Math.min(minX, points[i]);
+                minY = Math.min(minY, points[i + 1]);
+                maxX = Math.max(maxX, points[i]);
+                maxY = Math.max(maxY, points[i + 1]);
+            }
+
+            tempRect.set(minX, minY, maxX - minX, maxY - minY);
+            const matrix = generateTextureFillMatrix(tempTextureMatrix, style, tempRect, transform);
+
+            buildUvs(data.vertices, 2, offset, data.uvs as number[], offset, 2, count, matrix);
+        }
+        else
+        {
+            buildSimpleUvs(data.uvs as number[], offset, 2, count);
+        }
+
+        appendBatch(gpuContext.batches, data, indexOffset, offset, style.texture,
+            style.color, style.alpha, 'triangle-list', offset + count);
+        offset += count;
+    }
+
+    return true;
 }
 
 function addFinishedGeometry(
@@ -213,6 +312,7 @@ function addTextureToGeometryData(
  * @param color - The primitive's colour.
  * @param alpha - The primitive's alpha.
  * @param topology - The primitive's topology.
+ * @param vertexEnd - The end of the appended span, when later fills already share the position buffer.
  */
 function appendBatch(
     batches: BatchableGraphics[],
@@ -223,6 +323,7 @@ function appendBatch(
     color: number,
     alpha: number,
     topology: Topology,
+    vertexEnd = geometryData.vertices.length / 2,
 ): void
 {
     const previous = batches[batches.length - 1];
@@ -237,7 +338,7 @@ function appendBatch(
         && previous.attributeOffset + previous.attributeSize === vertOffset)
     {
         previous.indexSize = geometryData.indices.length - previous.indexOffset;
-        previous.attributeSize = (geometryData.vertices.length / 2) - previous.attributeOffset;
+        previous.attributeSize = vertexEnd - previous.attributeOffset;
 
         return;
     }
@@ -247,7 +348,7 @@ function appendBatch(
     batch.indexOffset = indexOffset;
     batch.indexSize = geometryData.indices.length - indexOffset;
     batch.attributeOffset = vertOffset;
-    batch.attributeSize = (geometryData.vertices.length / 2) - vertOffset;
+    batch.attributeSize = vertexEnd - vertOffset;
     batch.baseColor = color;
     batch.alpha = alpha;
     batch.texture = texture;
