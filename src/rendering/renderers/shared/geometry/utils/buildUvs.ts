@@ -1,5 +1,22 @@
 import type { Matrix } from '../../../../../maths/matrix/Matrix';
 
+let zeros = new Float32Array(1024);
+
+/**
+ * Immutable zero UVs for untextured geometry, shared instead of built and then discarded.
+ * @param size - The number of UV coordinates.
+ * @internal
+ */
+export function getZeroUvs(size: number): Float32Array
+{
+    if (zeros.length < size)
+    {
+        zeros = new Float32Array(Math.max(size, zeros.length * 2));
+    }
+
+    return zeros.subarray(0, size);
+}
+
 /**
  * Takes a vertices array and a matrix and transforms the vertices based on the matrix.
  * this out put is written to the uvs array

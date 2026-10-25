@@ -2,6 +2,7 @@ import { ExtensionType } from '../../../extensions/Extensions';
 import { getTextureBatchBindGroup } from '../../../rendering/batcher/gpu/getTextureBatchBindGroup';
 import { type BatcherOptions } from '../../../rendering/batcher/shared/Batcher';
 import { DefaultBatcher } from '../../../rendering/batcher/shared/DefaultBatcher';
+import { getZeroUvs } from '../../../rendering/renderers/shared/geometry/utils/buildUvs';
 import { InstructionSet } from '../../../rendering/renderers/shared/instructions/InstructionSet';
 import { Texture } from '../../../rendering/renderers/shared/texture/Texture';
 import { RendererType } from '../../../rendering/renderers/types';
@@ -35,8 +36,6 @@ export interface GraphicsGeometryData
 
 /** Shorter tessellations stay as they were built: a typed array costs some 100 bytes more than an array. */
 const COMPACT_LEAST = 64;
-/** Zeros, the UVs of every compacted context without a texture, grown to the largest's. */
-let zeros = new Float32Array(1024);
 
 /**
  * Keeps a context's tessellation, once built, in typed arrays rather than the arrays of numbers it is
@@ -74,14 +73,9 @@ function compactGeometryData(gpuContext: GpuGraphicsContext): void
 
     const uvs = data.uvs.length;
 
-    if (white && zeros.length < uvs)
-    {
-        zeros = new Float32Array(Math.max(uvs, zeros.length * 2));
-    }
-
     if (Array.isArray(data.uvs))
     {
-        data.uvs = white ? zeros.subarray(0, uvs) : new Float32Array(data.uvs);
+        data.uvs = white ? getZeroUvs(uvs) : new Float32Array(data.uvs);
     }
     if (Array.isArray(data.indices))
     {

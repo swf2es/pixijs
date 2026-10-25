@@ -1,4 +1,5 @@
 import { Matrix } from '../../../../maths/matrix/Matrix';
+import { Texture } from '../../../../rendering/renderers/shared/texture/Texture';
 import { CanvasGraphicsAdaptor } from '../../canvas/CanvasGraphicsAdaptor';
 import { GraphicsContext } from '../GraphicsContext';
 import { GpuGraphicsContext, GraphicsContextSystem } from '../GraphicsContextSystem';
@@ -13,6 +14,75 @@ const geometry = {
 
 describe('finished fill geometry', () =>
 {
+    it('shares zero UVs for white finished fills without temporary numeric UV arrays', () =>
+    {
+        const positions = new Float64Array([...geometry.vertices, ...geometry.vertices]);
+        const source = new GraphicsContext()
+            .fillGeometry({ vertices: positions.subarray(0, 8), indices: geometry.indices }, 1)
+            .fillGeometry({ vertices: positions.subarray(8), indices: geometry.indices }, 2);
+        const copy = source.clone();
+        const first = new GpuGraphicsContext();
+        const second = new GpuGraphicsContext();
+
+        buildContextBatches(source, first);
+        buildContextBatches(copy, second);
+        expect(first.geometryData.uvs).toBeInstanceOf(Float32Array);
+        expect((first.geometryData.uvs as Float32Array).buffer)
+            .toBe((second.geometryData.uvs as Float32Array).buffer);
+        expect(Array.from(first.geometryData.uvs)).toEqual(Array(positions.length).fill(0));
+        expect(first.batches.map((batch) => [batch.attributeOffset, batch.attributeSize,
+            batch.indexOffset, batch.indexSize])).toEqual([[0, 4, 0, 6], [4, 4, 6, 6]]);
+
+        first.destroy();
+        second.destroy();
+        source.destroy();
+        copy.destroy();
+    });
+
+    it('keeps shared zero UVs intact when a larger finished fill grows the buffer', () =>
+    {
+        const source = new GraphicsContext().fillGeometry(geometry);
+        const first = new GpuGraphicsContext();
+
+        buildContextBatches(source, first);
+        const saved = first.geometryData.uvs;
+        const large = new GraphicsContext().fillGeometry({
+            vertices: new Float64Array(8192), indices: geometry.indices,
+        });
+        const second = new GpuGraphicsContext();
+
+        buildContextBatches(large, second);
+        expect(saved.length).toBe(geometry.vertices.length);
+        expect(Array.from(saved)).toEqual(Array(geometry.vertices.length).fill(0));
+        expect(second.geometryData.uvs.length).toBe(8192);
+        expect(Array.from(second.geometryData.uvs).every((value) => value === 0)).toBe(true);
+
+        first.reset();
+        buildContextBatches(source, first);
+        expect(Array.from(first.geometryData.uvs)).toEqual(Array.from(saved));
+        first.destroy();
+        second.destroy();
+        source.destroy();
+        large.destroy();
+    });
+
+    it('builds UVs for mixed white and textured finished fills', () =>
+    {
+        const positions = new Float64Array([...geometry.vertices, ...geometry.vertices]);
+        const source = new GraphicsContext()
+            .fillGeometry({ vertices: positions.subarray(0, 8), indices: geometry.indices })
+            .fillGeometry({ vertices: positions.subarray(8), indices: geometry.indices },
+                { texture: Texture.EMPTY });
+        const gpu = new GpuGraphicsContext();
+
+        buildContextBatches(source, gpu);
+        expect(Array.from(gpu.geometryData.uvs).slice(0, 8)).toEqual(Array(8).fill(0));
+        expect(Array.from(gpu.geometryData.uvs).slice(8).some((value) => value !== 0)).toBe(true);
+        expect(gpu.geometryData.uvs.length).toBe(positions.length);
+        gpu.destroy();
+        source.destroy();
+    });
+
     it('paints the whole Canvas fill once, without alpha seams on internal triangle edges', () =>
     {
         const source = new GraphicsContext().fillGeometry(geometry, { color: 0x336699, alpha: 0.5 });

@@ -1,7 +1,7 @@
 import { extensions, ExtensionType } from '../../../../extensions/Extensions';
 import { Matrix } from '../../../../maths/matrix/Matrix';
 import { Rectangle } from '../../../../maths/shapes/Rectangle';
-import { buildSimpleUvs, buildUvs } from '../../../../rendering/renderers/shared/geometry/utils/buildUvs';
+import { buildSimpleUvs, buildUvs, getZeroUvs } from '../../../../rendering/renderers/shared/geometry/utils/buildUvs';
 import { transformVertices } from '../../../../rendering/renderers/shared/geometry/utils/transformVertices';
 import { Texture } from '../../../../rendering/renderers/shared/texture/Texture';
 import { BigPool } from '../../../../utils/pool/PoolGroup';
@@ -101,6 +101,7 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
     let first: Float32Array | Float64Array = null;
     let length = 0;
     let fills = 0;
+    let white = true;
 
     for (const instruction of context.instructions)
     {
@@ -120,6 +121,7 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
             || vertices.buffer !== first.buffer
             || vertices.byteOffset !== first.byteOffset + length * first.BYTES_PER_ELEMENT) return false;
 
+        white &&= instruction.data.style.texture === Texture.WHITE;
         length += vertices.length;
         fills++;
     }
@@ -131,7 +133,7 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
             ? new Float64Array(first.buffer, first.byteOffset, length)
             : new Float32Array(first.buffer, first.byteOffset, length),
         indices: [],
-        uvs: [],
+        uvs: white ? getZeroUvs(length) : [],
     };
 
     gpuContext.geometryData = data;
@@ -159,7 +161,7 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
             }
         }
 
-        if (style.texture !== Texture.WHITE)
+        if (!white && style.texture !== Texture.WHITE)
         {
             let minX = Infinity;
             let minY = Infinity;
@@ -179,7 +181,7 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
 
             buildUvs(data.vertices, 2, offset, data.uvs as number[], offset, 2, count, matrix);
         }
-        else
+        else if (!white)
         {
             buildSimpleUvs(data.uvs as number[], offset, 2, count);
         }

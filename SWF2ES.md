@@ -267,8 +267,9 @@ caller-owned tessellator. It uses the existing paint UV generation and batch,
 mask and filter pipeline. The buffers remain available after path retirement,
 unload and context restoration; clones borrow the same buffers. Canvas fills triangles together; SVG
 expands paths lazily. Tessellator selection, fill rules, memory limits and
-fallback caching stay with the caller. swf2es's opt-in native fill run passes all
-330 existing Flash reference cases; its default remains the JS path.
+fallback caching stay with the caller. swf2es's native fill run passes all
+330 existing Flash reference cases. The direct player hook is opt-in; its web
+host selects the native backend by default.
 
 Finished fills with identity transforms and contiguous views of one position
 buffer share it with the context's GPU data. A single fill shares its indices
@@ -277,3 +278,8 @@ or destroying the source replaces its views without changing a copy's buffers.
 `BatchableGraphics.roundToFloat32` preserves standalone float rounding before a
 copy's world transform. Attribute packers, including swf2es's colour batcher,
 honour this flag so sharing double buffers does not change rendered coordinates.
+
+White finished fills share zero UVs while their geometry is built, avoiding
+temporary numeric zero arrays before compaction. Textured and mixed contexts
+keep the ordinary UV calculation. The shared zero buffer grows without changing
+views retained by previously built contexts.
