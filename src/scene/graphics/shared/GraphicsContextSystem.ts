@@ -478,7 +478,6 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
             this._packed.push(gpuContext);
         }
 
-        const vertexSize = geometryData.vertices.length;
         const indexSize = geometryData.indices.length;
 
         for (let i = 0; i < batches.length; i++)
@@ -488,8 +487,6 @@ export class GraphicsContextSystem implements System<GraphicsContextSystemOption
 
         const batcher = graphicsData.batcher;
 
-        // TODO we can pool buffers here eventually..
-        batcher.ensureAttributeBuffer(vertexSize);
         batcher.ensureIndexBuffer(indexSize);
 
         batcher.begin();
