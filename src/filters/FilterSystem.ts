@@ -72,6 +72,22 @@ export interface FilterInstruction extends Instruction
      * @internal
      */
     popIndex?: number,
+    /**
+     * A pop's matching push, by its index in the instruction set: where drawing goes back to when the
+     * push's object is drawn again over its filter's output (Filter.objectApart).
+     * @internal
+     */
+    pushIndex?: number,
+    /**
+     * A push's: whether all that is drawn between it and its pop may be drawn twice (FilterPipe).
+     * @internal
+     */
+    plain?: boolean,
+    /**
+     * A push's: whether its object is being drawn again, over its filter's output, till its pop.
+     * @internal
+     */
+    redrawing?: boolean,
 }
 
 /** How far a filter region's edge may be from a texel and still be taken as on it. */
@@ -96,6 +112,13 @@ export class FilterData
      * @internal
      */
     public reused: Texture | null = null;
+
+    /**
+     * Whether its object is drawn again over its filter's output (Filter.objectApart): set as it is
+     * pushed, read as it is popped.
+     * @internal
+     */
+    public apart = false;
 
     /**
      * The texture to which the filter is applied.
@@ -181,6 +204,13 @@ function allDisabled(filters: readonly Filter[]): boolean
 export class FilterSystem implements System
 {
     /** @ignore */
+    /**
+     * The pipes whose instructions may be executed twice in a frame, drawing the same again: an object
+     * drawn by these alone may be drawn again over its filter's output (Filter.objectApart). Not
+     * filters, masks or render groups, whose state each push and pop moves on.
+     */
+    public static readonly redrawablePipes = new Set<string>(['batch', 'graphics', 'mesh']);
+
     public static extension = {
         type: [
             ExtensionType.WebGLSystem,
@@ -289,6 +319,7 @@ export class FilterSystem implements System
 
         filterData.skip = false;
         filterData.reused = null;
+        filterData.apart = false;
 
         filterData.filters = filters as Filter[];
         filterData.container = instruction.container;
@@ -317,6 +348,10 @@ export class FilterSystem implements System
         {
             return false;
         }
+
+        filterData.apart = !!instruction.plain && !filterData.blendRequired
+            && filterData.firstEnabledIndex === filterData.lastEnabledIndex
+            && filters[filterData.firstEnabledIndex].objectApart;
 
         const previousFilterData = this._getPreviousFilterData();
 
@@ -449,8 +484,12 @@ export class FilterSystem implements System
         return outputTexture;
     }
 
-    /** @internal */
-    public pop()
+    /**
+     * Pops the filter pushed last and draws it.
+     * @returns Whether its object is to be drawn again, over what it drew (Filter.objectApart).
+     * @internal
+     */
+    public pop(): boolean
     {
         const renderer = this.renderer;
 
@@ -459,7 +498,7 @@ export class FilterSystem implements System
         // if we are skipping this filter then we just do nothing :D
         if (filterData.skip)
         {
-            return;
+            return false;
         }
 
         // its kept output, drawn again as its filter drew it the time it was kept
@@ -486,7 +525,7 @@ export class FilterSystem implements System
                 this._activeBackSource = previousBackSource;
             }
 
-            return;
+            return filterData.apart;
         }
 
         renderer.globalUniforms.pop();
@@ -505,6 +544,8 @@ export class FilterSystem implements System
 
         // return the texture to the pool so we can reuse the next frame
         TexturePool.returnTexture(filterData.inputTexture);
+
+        return filterData.apart;
     }
 
     /**

@@ -5,7 +5,7 @@ import type { InstructionPipe } from '../rendering/renderers/shared/instructions
 import type { Renderer } from '../rendering/renderers/types';
 import type { Container } from '../scene/container/Container';
 import type { Effect } from '../scene/container/Effect';
-import type { FilterInstruction } from './FilterSystem';
+import { type FilterInstruction, FilterSystem } from './FilterSystem';
 
 /** @internal */
 export class FilterPipe implements InstructionPipe<FilterInstruction>
@@ -20,8 +20,8 @@ export class FilterPipe implements InstructionPipe<FilterInstruction>
     } as const;
 
     private _renderer: Renderer;
-    /** The pushes whose pops are still to be added, as instructions are built. */
-    private readonly _open: { instruction: FilterInstruction; set: InstructionSet }[] = [];
+    /** The pushes whose pops are still to be added, as instructions are built, and their indices. */
+    private readonly _open: { instruction: FilterInstruction; set: InstructionSet; index: number }[] = [];
 
     constructor(renderer: Renderer)
     {
@@ -43,8 +43,8 @@ export class FilterPipe implements InstructionPipe<FilterInstruction>
             popIndex: undefined,
         } as FilterInstruction;
 
+        this._open.push({ instruction, set: instructionSet, index: instructionSet.instructionSize });
         instructionSet.add(instruction);
-        this._open.push({ instruction, set: instructionSet });
     }
 
     public pop(_filterEffect: Effect, _container: Container, instructionSet: InstructionSet): void
@@ -52,17 +52,21 @@ export class FilterPipe implements InstructionPipe<FilterInstruction>
         this._renderer.renderPipes.batch.break(instructionSet);
 
         const open = this._open.pop();
+        const same = open?.set === instructionSet;
 
         if (open)
         {
-            open.instruction.popIndex = open.set === instructionSet ? instructionSet.instructionSize : undefined;
+            open.instruction.popIndex = same ? instructionSet.instructionSize : undefined;
+            open.instruction.plain = same && this._plain(instructionSet, open.index + 1);
+            open.instruction.redrawing = false;
         }
 
         instructionSet.add({
             renderPipeId: 'filter',
             action: 'popFilter',
             canBundle: false,
-        });
+            pushIndex: same ? open.index : undefined,
+        } as FilterInstruction);
     }
 
     /**
@@ -85,10 +89,42 @@ export class FilterPipe implements InstructionPipe<FilterInstruction>
 
         if (instruction.action === 'popFilter')
         {
-            this._renderer.filter.pop();
+            const pushIndex = instruction.pushIndex;
+            const push = pushIndex === undefined
+                ? undefined
+                : instructionSet?.instructions[pushIndex] as FilterInstruction;
+
+            // the end of its object drawn again: the filter was popped the first time
+            if (push?.redrawing)
+            {
+                push.redrawing = false;
+
+                return undefined;
+            }
+
+            // its object drawn again over the filter's output, from the instruction after its push
+            if (this._renderer.filter.pop() && push?.plain)
+            {
+                push.redrawing = true;
+
+                return pushIndex + 1;
+            }
         }
 
         return undefined;
+    }
+
+    /** Whether all from `from` to the end of `instructionSet` is drawn by FilterSystem.redrawablePipes. */
+    private _plain(instructionSet: InstructionSet, from: number): boolean
+    {
+        const instructions = instructionSet.instructions;
+
+        for (let i = from; i < instructionSet.instructionSize; i++)
+        {
+            if (!FilterSystem.redrawablePipes.has(instructions[i].renderPipeId)) return false;
+        }
+
+        return true;
     }
 
     public destroy(): void

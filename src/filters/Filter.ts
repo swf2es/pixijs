@@ -161,6 +161,15 @@ export class Filter extends Shader
     public enabled = true;
 
     /**
+     * Whether the filter draws what it adds alone, the object to be drawn again over it straight onto
+     * the target: then a lone filter whose object draws nothing that cannot be drawn twice (FilterPipe)
+     * has its object drawn after its output, at the target's resolution and samples, however coarse its
+     * input. Set it as the filter's area is measured (FilterSystem.filterAreaHook).
+     * @internal
+     */
+    public objectApart = false;
+
+    /**
      * The gpu state the filter requires to render.
      * @internal
      */
