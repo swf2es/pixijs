@@ -52,6 +52,12 @@ export interface FillGeometry
 {
     vertices: Float32Array | Float64Array;
     indices: Uint16Array | Uint32Array;
+    /**
+     * The vertex the indices count from, 0 if left out: fills tessellated together can share one
+     * index buffer counted from their first vertex, each fill's `vertices` a view of its own part.
+     * Contiguous fills whose offsets match their place are then drawn from those indices as they are.
+     */
+    indexOffset?: number;
 }
 
 /** @internal */

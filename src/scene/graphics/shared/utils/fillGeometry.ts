@@ -9,9 +9,10 @@ import type { FillGeometry } from '../GraphicsContext';
 const point = new Point();
 
 /** @internal */
-export function validateGeometry({ vertices, indices }: FillGeometry): void
+export function validateGeometry({ vertices, indices, indexOffset = 0 }: FillGeometry): void
 {
     if (vertices.length % 2 || indices.length % 3) throw new RangeError('Invalid fill geometry length');
+    if (!Number.isInteger(indexOffset) || indexOffset < 0) throw new RangeError('Invalid fill geometry index offset');
 
     for (let i = 0; i < vertices.length; i++)
     {
@@ -19,14 +20,16 @@ export function validateGeometry({ vertices, indices }: FillGeometry): void
     }
     for (let i = 0; i < indices.length; i++)
     {
-        if (indices[i] >= vertices.length / 2) throw new RangeError('Invalid fill geometry index');
+        const index = indices[i] - indexOffset;
+
+        if (index < 0 || index >= vertices.length / 2) throw new RangeError('Invalid fill geometry index');
     }
 }
 
 /** @internal */
 export function geometryBounds(geometry: FillGeometry, matrix: Matrix, bounds: Bounds): void
 {
-    const { vertices, indices } = geometry;
+    const { vertices, indices, indexOffset = 0 } = geometry;
 
     if (indices.length === 0) return;
 
@@ -37,7 +40,7 @@ export function geometryBounds(geometry: FillGeometry, matrix: Matrix, bounds: B
 
     for (let i = 0; i < indices.length; i++)
     {
-        const at = indices[i] * 2;
+        const at = (indices[i] - indexOffset) * 2;
         const x = vertices[at];
         const y = vertices[at + 1];
         const tx = matrix.a * x + matrix.c * y + matrix.tx;
@@ -58,15 +61,15 @@ export function geometryContains(geometry: FillGeometry, matrix: Matrix, p: Poin
     if (matrix.a * matrix.d - matrix.b * matrix.c === 0) return false;
 
     matrix.applyInverse(p, point);
-    const { vertices: v, indices } = geometry;
+    const { vertices: v, indices, indexOffset = 0 } = geometry;
     const x = point.x;
     const y = point.y;
 
     for (let i = 0; i < indices.length; i += 3)
     {
-        const a = indices[i] * 2;
-        const b = indices[i + 1] * 2;
-        const c = indices[i + 2] * 2;
+        const a = (indices[i] - indexOffset) * 2;
+        const b = (indices[i + 1] - indexOffset) * 2;
+        const c = (indices[i + 2] - indexOffset) * 2;
         const area = (v[b] - v[a]) * (v[c + 1] - v[a + 1]) - (v[b + 1] - v[a + 1]) * (v[c] - v[a]);
 
         if (area === 0) continue;
@@ -82,15 +85,15 @@ export function geometryContains(geometry: FillGeometry, matrix: Matrix, p: Poin
 }
 
 /** @internal */
-export function geometryPath({ vertices, indices }: FillGeometry, matrix: Matrix): GraphicsPath
+export function geometryPath({ vertices, indices, indexOffset = 0 }: FillGeometry, matrix: Matrix): GraphicsPath
 {
     const path = new GraphicsPath();
 
     for (let i = 0; i < indices.length; i += 3)
     {
-        const a = indices[i] * 2;
-        const b = indices[i + 1] * 2;
-        const c = indices[i + 2] * 2;
+        const a = (indices[i] - indexOffset) * 2;
+        const b = (indices[i + 1] - indexOffset) * 2;
+        const c = (indices[i + 2] - indexOffset) * 2;
 
         path.poly([vertices[a], vertices[a + 1], vertices[b], vertices[b + 1], vertices[c], vertices[c + 1]], true, matrix);
     }

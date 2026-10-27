@@ -187,6 +187,65 @@ describe('finished fill geometry', () =>
         context.destroy();
     });
 
+    it('draws a layer\'s indices counted from its first vertex without copying them', () =>
+    {
+        const positions = new Float64Array([...geometry.vertices, ...geometry.vertices.map((v) => v + 20)]);
+        const indices = new Uint16Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+        const first = { vertices: positions.subarray(0, 8), indices: indices.subarray(0, 6), indexOffset: 0 };
+        const second = { vertices: positions.subarray(8), indices: indices.subarray(6), indexOffset: 4 };
+        const context = new GraphicsContext().fillGeometry(first, 1).fillGeometry(second, 2);
+        const gpu = new GpuGraphicsContext();
+
+        buildContextBatches(context, gpu);
+        expect(gpu.geometryData.indices).toBeInstanceOf(Uint16Array);
+        expect((gpu.geometryData.indices as Uint16Array).buffer).toBe(indices.buffer);
+        expect(Array.from(gpu.geometryData.indices)).toEqual(Array.from(indices));
+        expect(gpu.batches.map((batch) => [batch.attributeOffset, batch.attributeSize,
+            batch.indexOffset, batch.indexSize])).toEqual([[0, 4, 0, 6], [4, 4, 6, 6]]);
+        expect(context.bounds.minX).toBe(0);
+        expect(context.bounds.maxX).toBe(30);
+        expect(context.containsPoint({ x: 25, y: 25 })).toBe(true);
+        expect(context.containsPoint({ x: 15, y: 15 })).toBe(false);
+        gpu.destroy();
+
+        // Alone, or moved, a fill's indices are counted from its own first vertex.
+        for (const alone of [
+            new GraphicsContext().fillGeometry(second),
+            new GraphicsContext().fillGeometry(geometry).translate(1, 0).fillGeometry(second),
+        ])
+        {
+            const built = new GpuGraphicsContext();
+
+            buildContextBatches(alone, built);
+            const count = built.geometryData.vertices.length / 2;
+
+            expect(Array.from(built.geometryData.indices).slice(-6))
+                .toEqual([0, 1, 2, 0, 2, 3].map((i) => i + count - 4));
+            built.destroy();
+            alone.destroy();
+        }
+
+        expect(() => new GraphicsContext().fillGeometry({ ...second, indexOffset: 5 })).toThrow();
+        expect(Array.from(indices)).toEqual([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+        context.destroy();
+    });
+
+    it('builds typed indices for fills whose indices count from their own vertices', () =>
+    {
+        const vertices = new Float64Array(70000 * 2);
+        const indices = new Uint16Array([0, 1, 34999]);
+        const context = new GraphicsContext()
+            .fillGeometry({ vertices: vertices.subarray(0, 70000), indices }, 1)
+            .fillGeometry({ vertices: vertices.subarray(70000), indices }, 2);
+        const gpu = new GpuGraphicsContext();
+
+        buildContextBatches(context, gpu);
+        expect(gpu.geometryData.indices).toBeInstanceOf(Uint32Array);
+        expect(Array.from(gpu.geometryData.indices)).toEqual([0, 1, 34999, 35000, 35001, 69999]);
+        gpu.destroy();
+        context.destroy();
+    });
+
     it('shares immutable colour-copy positions and records standalone float rounding', () =>
     {
         const contexts = new GraphicsContextSystem({

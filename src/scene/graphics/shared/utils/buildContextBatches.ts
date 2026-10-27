@@ -104,19 +104,26 @@ export function buildContextBatches(context: GraphicsContext, gpuContext: GpuGra
     }
 }
 
-/** Finished fills can share one immutable position buffer, including contiguous views of a layer. */
+/**
+ * Finished fills can share one immutable position buffer, including contiguous views of a layer, and
+ * one index buffer: a layer's own where its fills' indices already count from its first vertex
+ * (FillGeometry.indexOffset), else one built here as compaction would type it.
+ */
 function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsContext): boolean
 {
     let first: Float32Array | Float64Array = null;
+    let firstIndices: Uint16Array | Uint32Array = null;
     let length = 0;
+    let indexLength = 0;
     let fills = 0;
     let white = true;
+    let counted = true;
 
     for (const instruction of context.instructions)
     {
         if (instruction.action !== 'geometry' || !instruction.data.transform.isIdentity()) return false;
 
-        const { vertices, indices } = instruction.data.geometry;
+        const { vertices, indices, indexOffset = 0 } = instruction.data.geometry;
 
         if (indices.length === 0)
         {
@@ -130,23 +137,48 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
             || vertices.buffer !== first.buffer
             || vertices.byteOffset !== first.byteOffset + length * first.BYTES_PER_ELEMENT) return false;
 
+        firstIndices ??= indices;
+        counted &&= indexOffset === length / 2
+            && indices.constructor === firstIndices.constructor
+            && indices.buffer === firstIndices.buffer
+            && indices.byteOffset === firstIndices.byteOffset + indexLength * firstIndices.BYTES_PER_ELEMENT;
         white &&= instruction.data.style.texture === Texture.WHITE;
         length += vertices.length;
+        indexLength += indices.length;
         fills++;
     }
 
     if (!first) return false;
 
+    // The type compactGeometryData gives indices built as numbers.
+    const IndexArray = length / 2 <= 0x10000 ? Uint16Array : Uint32Array;
+    // A lone fill's own indices, or a layer's that already count from its first vertex, are drawn as
+    // they are; any others are copied once, counted from the first vertex.
+    const copy = !counted || (fills > 1 && !(firstIndices instanceof IndexArray));
+    let indices: Uint16Array | Uint32Array = firstIndices;
+
+    if (copy)
+    {
+        indices = new IndexArray(indexLength);
+    }
+    else if (fills > 1)
+    {
+        indices = firstIndices instanceof Uint16Array
+            ? new Uint16Array(firstIndices.buffer, firstIndices.byteOffset, indexLength)
+            : new Uint32Array(firstIndices.buffer, firstIndices.byteOffset, indexLength);
+    }
+
     const data: GraphicsGeometryData = {
         vertices: first instanceof Float64Array
             ? new Float64Array(first.buffer, first.byteOffset, length)
             : new Float32Array(first.buffer, first.byteOffset, length),
-        indices: [],
+        indices,
         uvs: white ? getZeroUvs(length) : [],
     };
 
     gpuContext.geometryData = data;
     let offset = 0;
+    let indexOffset = 0;
 
     for (const instruction of context.instructions)
     {
@@ -156,17 +188,14 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
 
         const points = geometry.vertices;
         const count = points.length / 2;
-        const indexOffset = fills === 1 ? 0 : data.indices.length;
 
-        if (fills === 1)
+        if (copy)
         {
-            data.indices = geometry.indices;
-        }
-        else
-        {
+            const shift = offset - (geometry.indexOffset ?? 0);
+
             for (let i = 0; i < geometry.indices.length; i++)
             {
-                (data.indices as number[]).push(offset + geometry.indices[i]);
+                indices[indexOffset + i] = shift + geometry.indices[i];
             }
         }
 
@@ -196,8 +225,9 @@ function buildSharedGeometry(context: GraphicsContext, gpuContext: GpuGraphicsCo
         }
 
         appendBatch(gpuContext.batches, data, indexOffset, offset, style.texture,
-            style.color, style.alpha, 'triangle-list', offset + count);
+            style.color, style.alpha, 'triangle-list', offset + count, indexOffset + geometry.indices.length);
         offset += count;
+        indexOffset += geometry.indices.length;
     }
 
     return true;
@@ -233,9 +263,11 @@ function addFinishedGeometry(
         maxX = Math.max(maxX, x);
         maxY = Math.max(maxY, y);
     }
+    const shift = vertOffset - (geometry.indexOffset ?? 0);
+
     for (let i = 0; i < geometry.indices.length; i++)
     {
-        indices.push(vertOffset + geometry.indices[i]);
+        indices.push(shift + geometry.indices[i]);
     }
 
     const count = points.length / 2;
@@ -324,6 +356,7 @@ function addTextureToGeometryData(
  * @param alpha - The primitive's alpha.
  * @param topology - The primitive's topology.
  * @param vertexEnd - The end of the appended span, when later fills already share the position buffer.
+ * @param indexEnd - The end of the appended indices, when later fills already share the index buffer.
  */
 function appendBatch(
     batches: BatchableGraphics[],
@@ -335,6 +368,7 @@ function appendBatch(
     alpha: number,
     topology: Topology,
     vertexEnd = geometryData.vertices.length / 2,
+    indexEnd = geometryData.indices.length,
 ): void
 {
     const previous = batches[batches.length - 1];
@@ -348,7 +382,7 @@ function appendBatch(
         && previous.indexOffset + previous.indexSize === indexOffset
         && previous.attributeOffset + previous.attributeSize === vertOffset)
     {
-        previous.indexSize = geometryData.indices.length - previous.indexOffset;
+        previous.indexSize = indexEnd - previous.indexOffset;
         previous.attributeSize = vertexEnd - previous.attributeOffset;
 
         return;
@@ -357,7 +391,7 @@ function appendBatch(
     const batch = BigPool.get(BatchableGraphics);
 
     batch.indexOffset = indexOffset;
-    batch.indexSize = geometryData.indices.length - indexOffset;
+    batch.indexSize = indexEnd - indexOffset;
     batch.attributeOffset = vertOffset;
     batch.attributeSize = vertexEnd - vertOffset;
     batch.baseColor = color;

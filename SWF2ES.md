@@ -273,7 +273,12 @@ host selects the native backend by default.
 
 Finished fills with identity transforms and contiguous views of one position
 buffer share it with the context's GPU data. A single fill shares its indices
-too. Immutable tessellation copies share positions, indices and UVs; rebuilding
+too. `FillGeometry.indexOffset` lets fills tessellated together share one index
+buffer counted from their first vertex, each fill's `vertices` a view of its own
+part; contiguous fills whose offsets match their place share those indices with
+the GPU data as they are, where they would otherwise be pushed into an array of
+numbers and copied into a typed one. Any other fills' indices are copied once,
+straight into the typed array compaction would have made. Immutable tessellation copies share positions, indices and UVs; rebuilding
 or destroying the source replaces its views without changing a copy's buffers.
 `BatchableGraphics.roundToFloat32` preserves standalone float rounding before a
 copy's world transform. Attribute packers, including swf2es's colour batcher,

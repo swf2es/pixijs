@@ -33,16 +33,17 @@ const tempGeometryBounds = new Rectangle();
 function fillTriangles(
     context: CrossPlatformCanvasRenderingContext2D,
     vertices: ArrayLike<number>,
-    indices: ArrayLike<number>
+    indices: ArrayLike<number>,
+    indexOffset = 0
 ): void
 {
     context.beginPath();
 
     for (let i = 0; i < indices.length; i += 3)
     {
-        const i0 = indices[i] * 2;
-        const i1 = indices[i + 1] * 2;
-        const i2 = indices[i + 2] * 2;
+        const i0 = (indices[i] - indexOffset) * 2;
+        const i1 = (indices[i + 1] - indexOffset) * 2;
+        const i2 = (indices[i + 2] - indexOffset) * 2;
 
         context.moveTo(vertices[i0], vertices[i0 + 1]);
         context.lineTo(vertices[i1], vertices[i1 + 1]);
@@ -458,7 +459,7 @@ export class CanvasGraphicsAdaptor implements GraphicsAdaptor
                 context.transform(transform.a, transform.b, transform.c, transform.d, transform.tx, transform.ty);
                 context.fillStyle = canvasStyle as string | CanvasPattern | CanvasGradient;
                 // One fill keeps internal triangle edges from receiving antialiasing or alpha twice.
-                fillTriangles(context, points, geometry.indices);
+                fillTriangles(context, points, geometry.indices, geometry.indexOffset ?? 0);
                 context.restore();
                 continue;
             }
