@@ -1172,14 +1172,12 @@ export class FilterSystem implements System
         {
             let flip = filterData.inputTexture;
 
-            const tempTexture = TexturePool.getOptimalTexture({
-                width: bounds.width,
-                height: bounds.height,
-                resolution: flip.source._resolution,
-            });
-
-            // get another texture that we will render the next filter too
-            let flop = tempTexture;
+            // another texture that we will render the next filter to, taken as a pass first needs it:
+            // a list whose filters before the last all step aside needs none; and a second in place of
+            // the input where that is kept (an output given back, or one taken), not to be drawn into
+            let tempTexture: Texture | null = null;
+            let secondTexture: Texture | null = null;
+            let flop: Texture | null = null;
 
             // loop and apply the filters, omitting the last one as we will render that to the final target
             for (let i = firstEnabled; i < lastEnabled; i++)
@@ -1191,17 +1189,45 @@ export class FilterSystem implements System
                 // one that would draw its input unchanged leaves it to the next
                 if (filter.passesInput(this, flip)) continue;
 
+                if (!flop)
+                {
+                    tempTexture = TexturePool.getOptimalTexture({
+                        width: bounds.width,
+                        height: bounds.height,
+                        resolution: flip.source._resolution,
+                    });
+                    flop = tempTexture;
+                }
+
                 filter.apply(this, flip, flop, true);
                 const t = flip;
 
                 flip = flop;
                 flop = t;
+
+                if (flop === filterData.inputTexture && filterData.inputTaken)
+                {
+                    secondTexture ??= TexturePool.getOptimalTexture({
+                        width: bounds.width,
+                        height: bounds.height,
+                        resolution: flip.source._resolution,
+                    });
+                    flop = secondTexture;
+                }
             }
             // apply the last enabled filter to the output
             filters[lastEnabled].apply(this, flip, filterData.outputRenderSurface, clear);
 
             // return those textures for later!
-            TexturePool.returnTexture(tempTexture);
+            if (tempTexture)
+            {
+                TexturePool.returnTexture(tempTexture);
+            }
+
+            if (secondTexture)
+            {
+                TexturePool.returnTexture(secondTexture);
+            }
         }
     }
 
