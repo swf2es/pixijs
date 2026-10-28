@@ -114,6 +114,13 @@ export class FilterData
     public reused: Texture | null = null;
 
     /**
+     * Whether its filter took the input texture to keep (FilterSystem.takeInput), which the pop then
+     * does not give back to the pool.
+     * @internal
+     */
+    public inputTaken = false;
+
+    /**
      * Whether its object is drawn again over its filter's output (Filter.objectApart): set as it is
      * pushed, read as it is popped.
      * @internal
@@ -319,6 +326,7 @@ export class FilterSystem implements System
 
         filterData.skip = false;
         filterData.reused = null;
+        filterData.inputTaken = false;
         filterData.apart = false;
 
         filterData.filters = filters as Filter[];
@@ -355,16 +363,29 @@ export class FilterSystem implements System
 
         const previousFilterData = this._getPreviousFilterData();
 
-        // A lone filter that kept its output from an unchanged object gives it back: nothing is drawn
+        // A first filter that kept its output from an unchanged object gives it back: nothing is drawn
         // into an input, nor run, and the caller goes on from the matching pop (FilterPipe), which
-        // draws the output again. Not where the filter blends with what is behind, which changes.
-        if (mayReuse && !filterData.blendRequired && filterData.firstEnabledIndex === filterData.lastEnabledIndex)
+        // draws the output again, through the filters after it. Not where that filter blends with what
+        // is behind, which changes; one after it that does reads what is behind now, copied here as
+        // the object would have been drawn over it.
+        const first = filterData.firstEnabledIndex;
+
+        if (mayReuse && !filters[first].blendRequired)
         {
-            const reused = filters[filterData.firstEnabledIndex].reusedOutput(this, filterData);
+            const reused = filters[first].reusedOutput(this, filterData);
 
             if (reused)
             {
                 filterData.reused = reused;
+                filterData.backTexture = Texture.EMPTY;
+
+                if (filterData.blendRequired)
+                {
+                    renderer.renderTarget.finishRenderPass();
+                    const renderTarget = renderer.renderTarget.getRenderTarget(filterData.outputRenderSurface);
+
+                    filterData.backTexture = this.getBackTexture(renderTarget, bounds, previousFilterData?.bounds);
+                }
 
                 return true;
             }
@@ -501,7 +522,33 @@ export class FilterSystem implements System
             return false;
         }
 
-        // its kept output, drawn again as its filter drew it the time it was kept
+        // its kept output, run through the filters after it as though the object had been drawn into
+        // it: the kept texture stays its filter's, not the pool's
+        if (filterData.reused && filterData.firstEnabledIndex !== filterData.lastEnabledIndex)
+        {
+            filterData.inputTexture = filterData.reused;
+            filterData.inputTaken = true;
+            filterData.reused = null;
+            this._activeFilterData = filterData;
+
+            try
+            {
+                this._applyFiltersToTexture(filterData, false);
+            }
+            finally
+            {
+                filterData.inputTexture = null;
+
+                if (filterData.blendRequired)
+                {
+                    TexturePool.returnTexture(filterData.backTexture);
+                }
+            }
+
+            return false;
+        }
+
+        // a lone filter's kept output, drawn again as its filter drew it the time it was kept
         if (filterData.reused)
         {
             const reused = filterData.reused;
@@ -542,10 +589,41 @@ export class FilterSystem implements System
             TexturePool.returnTexture(filterData.backTexture);
         }
 
-        // return the texture to the pool so we can reuse the next frame
-        TexturePool.returnTexture(filterData.inputTexture);
+        // return the texture to the pool so we can reuse the next frame, unless its filter kept it
+        if (!filterData.inputTaken)
+        {
+            TexturePool.returnTexture(filterData.inputTexture);
+        }
 
         return filterData.apart;
+    }
+
+    /**
+     * Takes the input the object was drawn into, as the filter being applied would keep it as it is
+     * (Filter.passesInput), in place of a copy: the pool does not get it back, and the filter gives it
+     * back to the pool itself when it lets go of it. Only the input of a filter popped as usual, which
+     * the pool lent; the filter is not to draw into it.
+     * @param input - The input it was given, which must be the object's.
+     * @returns Whether it was taken.
+     * @internal
+     */
+    public takeInput(input: Texture): boolean
+    {
+        const filterData = this._activeFilterData;
+
+        if (
+            !filterData
+            || filterData.inputTaken
+            || filterData.inputTexture !== input
+            || this._filterStack[this._filterStackIndex] !== filterData
+        )
+        {
+            return false;
+        }
+
+        filterData.inputTaken = true;
+
+        return true;
     }
 
     /**
@@ -1098,6 +1176,9 @@ export class FilterSystem implements System
                 const filter = filters[i];
 
                 if (!filter.enabled) continue;
+
+                // one that would draw its input unchanged leaves it to the next
+                if (filter.passesInput(this, flip)) continue;
 
                 filter.apply(this, flip, flop, true);
                 const t = flip;

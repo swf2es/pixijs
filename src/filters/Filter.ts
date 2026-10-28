@@ -240,7 +240,9 @@ export class Filter extends Shader
     /**
      * The output this filter kept from an earlier run on the same input, if it may be drawn again in
      * place of drawing the object into an input and running the filter: null, as here, to run it. Only
-     * a lone enabled filter that needs no back texture is asked, before anything is drawn (FilterSystem).
+     * the first enabled filter is asked, and only one that needs no back texture itself, before
+     * anything is drawn (FilterSystem); the filters after it then run on the output, as a blend that
+     * reads what is behind runs on a kept layer.
      * @param _filterManager - The filter system.
      * @param _filterData - What the push measured: the bounds, the resolution.
      * @returns The kept output, or null.
@@ -249,6 +251,21 @@ export class Filter extends Shader
     public reusedOutput(_filterManager: FilterSystem, _filterData: FilterData): Texture | null
     {
         return null;
+    }
+
+    /**
+     * Whether this filter, applied to `input` now, would draw it unchanged: then a list goes on from
+     * `input`, with no pass of this filter's. It stands for `apply`, whose bookkeeping it does, and may
+     * keep `input` as it is (FilterSystem.takeInput). Only a filter followed by another in its list is
+     * asked, as the last must draw into the output.
+     * @param _filterManager - The filter system.
+     * @param _input - The input it would be applied to.
+     * @returns Whether its pass is skipped, its input taken as its output.
+     * @internal
+     */
+    public passesInput(_filterManager: FilterSystem, _input: Texture): boolean
+    {
+        return false;
     }
 
     public apply(
