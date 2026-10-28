@@ -147,7 +147,10 @@ export class GlRenderTargetAdaptor implements RenderTargetAdaptor<GlRenderTarget
         gl.bindFramebuffer(gl.FRAMEBUFFER, glRenderTarget.resolveTargetFramebuffer);
         this._boundFramebuffer = glRenderTarget.resolveTargetFramebuffer;
 
-        renderer.texture.bind(destinationTexture, 0);
+        // copyTexSubImage2D writes the texture on the active unit: bind leaves the active unit where it
+        // was when the destination is on unit 0 already, as a filter's input of one pass that is the
+        // back texture of the next, and the copy went into whatever another unit held.
+        renderer.texture.bindForUpload(destinationTexture, 0);
 
         gl.copyTexSubImage2D(gl.TEXTURE_2D, 0,
             originDest.x, originDest.y,
