@@ -80,6 +80,10 @@ export class FilterPipe implements InstructionPipe<FilterInstruction>
     {
         if (instruction.action === 'pushFilter')
         {
+            // a redraw starts after its push, so a push run again is a new frame: one that threw
+            // midway through its redraw must not leave its pop skipping the filter's pop
+            instruction.redrawing = false;
+
             const popIndex = instruction.popIndex;
             const pop = popIndex === undefined ? undefined : instructionSet?.instructions[popIndex] as FilterInstruction;
             const mayReuse = pop?.renderPipeId === 'filter' && pop.action === 'popFilter';
