@@ -381,10 +381,21 @@ export class FilterSystem implements System
 
                 if (filterData.blendRequired)
                 {
-                    renderer.renderTarget.finishRenderPass();
-                    const renderTarget = renderer.renderTarget.getRenderTarget(filterData.outputRenderSurface);
+                    // as _setupFilterTextures copies it: the copy resolves what it copies of a
+                    // multisampled target, not the whole target before it
+                    this._preparing++;
 
-                    filterData.backTexture = this.getBackTexture(renderTarget, bounds, previousFilterData?.bounds);
+                    try
+                    {
+                        renderer.renderTarget.finishRenderPass();
+                        const renderTarget = renderer.renderTarget.getRenderTarget(filterData.outputRenderSurface);
+
+                        filterData.backTexture = this.getBackTexture(renderTarget, bounds, previousFilterData?.bounds);
+                    }
+                    finally
+                    {
+                        this._preparing--;
+                    }
                 }
 
                 return true;
