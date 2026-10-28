@@ -131,6 +131,15 @@ export class FilterPipe implements InstructionPipe<FilterInstruction>
         return true;
     }
 
+    /**
+     * Draws the kept outputs the filter system gathered from the pops just executed
+     * (FilterSystem.batchesReused): before any other instruction, and at the end of a set.
+     */
+    public flush(): void
+    {
+        (this._renderer.filter as { flushReused?: () => void }).flushReused?.();
+    }
+
     public destroy(): void
     {
         this._renderer = null;

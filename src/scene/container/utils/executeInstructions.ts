@@ -11,10 +11,15 @@ export function executeInstructions(renderGroup: RenderGroup, renderer: RenderPi
 {
     const instructionSet = renderGroup.instructionSet;
     const instructions = instructionSet.instructions;
+    const filter = renderer.filter;
 
     for (let i = 0; i < instructionSet.instructionSize; i++)
     {
         const instruction = instructions[i];
+
+        // kept filter outputs gathered from the pops before it are drawn before anything else is
+        if (instruction.renderPipeId !== 'filter') filter?.flush();
+
         const pipe = renderer[instruction.renderPipeId as keyof RenderPipes] as InstructionPipe<any>;
         const next = (pipe.execute as (instruction: unknown, set: unknown) => number | void)
             .call(pipe, instruction, instructionSet);
@@ -22,4 +27,6 @@ export function executeInstructions(renderGroup: RenderGroup, renderer: RenderPi
         // a filter that reused its kept output: on from its pop, past the object it did not draw
         if (typeof next === 'number') i = next - 1;
     }
+
+    filter?.flush();
 }

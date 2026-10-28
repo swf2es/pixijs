@@ -3,8 +3,11 @@ import { PassthroughFilter } from '../filters/defaults/passthrough/PassthroughFi
 import { FilterEffect } from '../filters/FilterEffect';
 import { Matrix } from '../maths/matrix/Matrix';
 import { type Rectangle } from '../maths/shapes/Rectangle';
+import { Batch } from '../rendering/batcher/shared/Batcher';
+import { DefaultBatcher } from '../rendering/batcher/shared/DefaultBatcher';
 import { BindGroup } from '../rendering/renderers/gpu/shader/BindGroup';
 import { Geometry } from '../rendering/renderers/shared/geometry/Geometry';
+import { getAdjustedBlendModeBlend } from '../rendering/renderers/shared/state/getAdjustedBlendModeBlend';
 import { UniformGroup } from '../rendering/renderers/shared/shader/UniformGroup';
 import { TextureSource } from '../rendering/renderers/shared/texture/sources/TextureSource';
 import { Texture } from '../rendering/renderers/shared/texture/Texture';
@@ -88,6 +91,32 @@ export interface FilterInstruction extends Instruction
      * @internal
      */
     redrawing?: boolean,
+}
+
+/** A kept output's quad, as the default batcher packs a sprite's: four vertices of six words each. */
+const SLOT_FLOATS = 24;
+/** A slot's words as they were, compared bit for bit with what is written. */
+const slotScratch = new Uint32Array(SLOT_FLOATS);
+
+/** Two triangles a quad, for `count` quads in a row, as the batcher indexes them. */
+function quadIndices(count: number): Uint32Array
+{
+    const indices = new Uint32Array(count * 6);
+
+    for (let i = 0; i < count; i++)
+    {
+        const v = i * 4;
+        const at = i * 6;
+
+        indices[at] = v;
+        indices[at + 1] = v + 1;
+        indices[at + 2] = v + 2;
+        indices[at + 3] = v;
+        indices[at + 4] = v + 2;
+        indices[at + 5] = v + 3;
+    }
+
+    return indices;
 }
 
 /** How far a filter region's edge may be from a texel and still be taken as on it. */
@@ -238,8 +267,40 @@ export class FilterSystem implements System
     /** @internal */
     public _applying = 0;
 
+    /**
+     * Whether a kept output given back to draw as it is (Filter.drawsReusedAsIs) is drawn as a quad by
+     * the batcher's shader, in its filter's blend mode, from vertices kept on the GPU, in place of a
+     * pass of its filter: a crowd's glows, most kept from frame to frame, each took the pass's program,
+     * its uniforms and geometry. Those drawn in a row share the shader and geometry bound for the first.
+     * WebGL only; false draws each by its filter.
+     */
+    public batchesReused = true;
+
     private _filterStackIndex = 0;
     private _filterStack: FilterData[] = [];
+
+    /**
+     * The kept outputs gathered to draw, in order, till something else is drawn (flushReused): each a
+     * draw of the batcher's own, of the quad in its slot of `_reusedVertices`.
+     */
+    private readonly _reusedDraws: Batch[] = [];
+    private _reusedCount = 0;
+    /** The batcher whose shader and geometry draw them; its geometry holds the slots, nothing else. */
+    private _reusedBatcher: DefaultBatcher | null = null;
+    /**
+     * A quad's four vertices a slot, as the batcher packs them, kept on the GPU from frame to frame:
+     * the kept outputs take the slots in the order they are drawn, from the first at each render, so
+     * a still screen writes none, and a slot is written only where its quad moved or changed.
+     */
+    private _reusedVertices: Float32Array = new Float32Array(0);
+    /** The slots' words, colours and texture units among them. */
+    private _reusedWords: Uint32Array = new Uint32Array(0);
+    private _reusedSlot = 0;
+    /** The slots written since the last flush, to upload with it: from, and to past the last. */
+    private _reusedDirtyFrom = Infinity;
+    private _reusedDirtyTo = 0;
+    /** Whether the slots' buffer outgrew the GPU's copy, which must then be uploaded whole. */
+    private _reusedGrown = false;
 
     private readonly _filterGlobalUniforms = new UniformGroup({
         uInputSize: { value: new Float32Array(4), type: 'vec4<f32>' },
@@ -370,6 +431,9 @@ export class FilterSystem implements System
             }
         }
 
+        // what the input is drawn over, and the back texture read from, include the outputs gathered
+        this.flushReused();
+
         // set all the filter data
 
         this._setupFilterTextures(filterData, bounds, renderer, previousFilterData);
@@ -411,6 +475,8 @@ export class FilterSystem implements System
         {
             return texture;
         }
+
+        this.flushReused();
 
         // get a filter data from the stack. They can be reused multiple times each frame,
         // so we don't need to worry about overwriting them in a single pass.
@@ -507,6 +573,12 @@ export class FilterSystem implements System
             const reused = filterData.reused;
 
             filterData.reused = null;
+
+            // drawn with the next instruction that is not a filter's, before the object drawn again
+            if (this._gatherReused(filterData, reused)) return filterData.apart;
+
+            this.flushReused();
+
             const previousBackSource = this._activeBackSource;
 
             this._activeFilterData = filterData;
@@ -528,6 +600,9 @@ export class FilterSystem implements System
             return filterData.apart;
         }
 
+        // drawn into this filter's input, with its uniforms
+        this.flushReused();
+
         renderer.globalUniforms.pop();
 
         renderer.renderTarget.finishRenderPass();
@@ -546,6 +621,191 @@ export class FilterSystem implements System
         TexturePool.returnTexture(filterData.inputTexture);
 
         return filterData.apart;
+    }
+
+    /** @internal */
+    public renderStart(): void
+    {
+        this._reusedSlot = 0;
+    }
+
+    /**
+     * Draws the kept outputs gathered (batchesReused) through the batcher, each from its slot: before
+     * anything else is drawn, or the target or uniforms change.
+     * @internal
+     */
+    public flushReused(): void
+    {
+        const count = this._reusedCount;
+
+        if (count === 0) return;
+
+        this._reusedCount = 0;
+
+        const geometry = this._reusedBatcher.geometry;
+        const vertices = this._reusedVertices;
+
+        if (this._reusedGrown)
+        {
+            this._reusedGrown = false;
+            geometry.buffers[0].setDataWithSize(vertices, vertices.length, true);
+            geometry.indexBuffer.setDataWithSize(quadIndices(vertices.length / SLOT_FLOATS), vertices.length / 4, true);
+        }
+        else if (this._reusedDirtyTo > this._reusedDirtyFrom)
+        {
+            geometry.buffers[0].update(
+                (this._reusedDirtyTo - this._reusedDirtyFrom) * SLOT_FLOATS * 4,
+                this._reusedDirtyFrom * SLOT_FLOATS * 4
+            );
+        }
+
+        this._reusedDirtyFrom = Infinity;
+        this._reusedDirtyTo = 0;
+
+        const pipe = (this.renderer as WebGLRenderer).renderPipes.batch;
+        const draws = this._reusedDraws;
+
+        for (let i = 0; i < count; i++)
+        {
+            const draw = draws[i];
+
+            draw.action = i === 0 ? 'startBatch' : 'renderBatch';
+            pipe.execute(draw);
+            draw.textures.textures[0] = null;
+        }
+    }
+
+    /**
+     * Gathers a kept output to draw through the batcher (batchesReused), where that draws it as its
+     * filter's pass would: as it is, on the target bound, in the uniforms' space but uncoloured.
+     * @param filterData - The popped filter's data, its bounds where the output goes.
+     * @param reused - The output.
+     * @returns Whether it was gathered; if not, the filter draws it.
+     */
+    private _gatherReused(filterData: FilterData, reused: Texture): boolean
+    {
+        const renderer = this.renderer;
+
+        if (!this.batchesReused || renderer.type !== RendererType.WEBGL) return false;
+
+        const filter = filterData.filters[filterData.firstEnabledIndex];
+
+        if (!filter.drawsReusedAsIs()) return false;
+
+        // a group cached as a texture draws in its own space, which its filters' bounds are taken to
+        const container = filterData.container;
+        const group = container && (container.renderGroup || container.parentRenderGroup);
+
+        if (group?.cacheToLocalTransform) return false;
+
+        // the batcher's colour multiplies what it draws, which the filter's pass does not; white and
+        // opaque comes signed or not, as it was packed
+        const uniforms = renderer.globalUniforms.globalUniformData;
+
+        if ((uniforms.worldColor >>> 0) !== 0xFFFFFFFF) return false;
+
+        // the bounds are in the target's space, the batcher's vertices in the render group's
+        const world = uniforms.worldTransformMatrix;
+        const inverse = this._reusedInverse;
+
+        if (world.a === 1 && world.b === 0 && world.c === 0 && world.d === 1 && world.tx === 0 && world.ty === 0)
+        {
+            inverse.identity();
+        }
+        else
+        {
+            if ((world.a * world.d) - (world.b * world.c) === 0) return false;
+
+            inverse.copyFrom(world).invert();
+        }
+
+        this._reusedBatcher ??= new DefaultBatcher({ maxTextures: renderer.limits.maxBatchableTextures });
+
+        const slot = this._reusedSlot++;
+
+        if ((slot + 1) * SLOT_FLOATS > this._reusedVertices.length)
+        {
+            const grown = new Float32Array(Math.max(16, (slot + 1) * 2) * SLOT_FLOATS);
+
+            grown.set(this._reusedVertices);
+            this._reusedVertices = grown;
+            this._reusedWords = new Uint32Array(grown.buffer);
+            this._reusedGrown = true;
+        }
+
+        if (this._writeSlot(slot, filterData.bounds, reused, inverse))
+        {
+            this._reusedDirtyFrom = Math.min(this._reusedDirtyFrom, slot);
+            this._reusedDirtyTo = Math.max(this._reusedDirtyTo, slot + 1);
+        }
+
+        const draws = this._reusedDraws;
+        const draw = draws[this._reusedCount] ??= new Batch();
+        const source = reused.source;
+
+        draw.batcher = this._reusedBatcher;
+        draw.textures.textures[0] = source;
+        draw.textures.count = 1;
+        draw.blendMode = getAdjustedBlendModeBlend(filter.blendMode, source);
+        draw.topology = 'triangle-list';
+        draw.start = slot * 6;
+        draw.size = 6;
+        this._reusedCount++;
+
+        return true;
+    }
+
+    private readonly _reusedInverse = new Matrix();
+
+    /**
+     * Packs a kept output's quad into its slot as the batcher packs a sprite's, white, from texture
+     * unit 0: at the output's place, its texture's size, mapped by `transform`.
+     * @returns Whether the slot changed.
+     */
+    private _writeSlot(slot: number, bounds: Bounds, texture: Texture, transform: Matrix): boolean
+    {
+        const f32 = this._reusedVertices;
+        const u32 = this._reusedWords;
+        const { a, b, c, d, tx, ty } = transform;
+        const x0 = bounds.minX;
+        const y0 = bounds.minY;
+        const x1 = x0 + texture.frame.width;
+        const y1 = y0 + texture.frame.height;
+        const uvs = texture.uvs;
+        const at = slot * SLOT_FLOATS;
+        const was = slotScratch;
+
+        was.set(u32.subarray(at, at + SLOT_FLOATS));
+
+        f32[at] = (a * x0) + (c * y0) + tx;
+        f32[at + 1] = (b * x0) + (d * y0) + ty;
+        f32[at + 2] = uvs.x0;
+        f32[at + 3] = uvs.y0;
+        f32[at + 6] = (a * x1) + (c * y0) + tx;
+        f32[at + 7] = (b * x1) + (d * y0) + ty;
+        f32[at + 8] = uvs.x1;
+        f32[at + 9] = uvs.y1;
+        f32[at + 12] = (a * x1) + (c * y1) + tx;
+        f32[at + 13] = (b * x1) + (d * y1) + ty;
+        f32[at + 14] = uvs.x2;
+        f32[at + 15] = uvs.y2;
+        f32[at + 18] = (a * x0) + (c * y1) + tx;
+        f32[at + 19] = (b * x0) + (d * y1) + ty;
+        f32[at + 20] = uvs.x3;
+        f32[at + 21] = uvs.y3;
+
+        for (let i = at + 4; i < at + SLOT_FLOATS; i += 6)
+        {
+            u32[i] = 0xFFFFFFFF;
+            u32[i + 1] = 0;
+        }
+
+        for (let i = 0; i < SLOT_FLOATS; i++)
+        {
+            if (u32[at + i] !== was[i]) return true;
+        }
+
+        return false;
     }
 
     /**
@@ -690,6 +950,8 @@ export class FilterSystem implements System
         }
 
         this._passthroughFilter?.destroy(true);
+        this._reusedBatcher?.destroy();
+        this._reusedBatcher = null;
         (this._passthroughFilter as null) = null;
     }
 

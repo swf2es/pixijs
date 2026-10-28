@@ -71,6 +71,9 @@ Adobe's Flash Player; a step that changes a drawn pixel is not taken.
    (opted-in dirty hidden groups release obsolete instructions and batchers until
    reveal; their owner guarantees no external mask or render-layer consumers);
    `FilterSystem.filterAreaHook`, `measureFilterArea` and `activeBounds`;
+   `Filter.reusedOutput` and `drawsReusedAsIs`, by which a kept output
+   is drawn again, through the batcher where it is drawn as it is
+   (`FilterSystem.batchesReused`);
    `fastGlobalBoundsHooks.onMask`; `GraphicsOptions.observeContext`;
    `getContextRenderDataOnCpu`, `GlTextureSystem.bindForUpload`,
    `GlBufferSystem.resizeOnNextUpload` and `Container.colorRoot`, which

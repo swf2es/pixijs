@@ -251,6 +251,19 @@ export class Filter extends Shader
         return null;
     }
 
+    /**
+     * Whether the output it gives back (reusedOutput) is drawn again just as it is: a copy, blended in
+     * its blend mode by the GPU's blending, which the filter system may then draw as a quad through the
+     * batcher, with the kept outputs drawn next to it, in place of a pass of this filter
+     * (FilterSystem.batchesReused).
+     * @returns False, as here, to draw it by applying the filter.
+     * @internal
+     */
+    public drawsReusedAsIs(): boolean
+    {
+        return false;
+    }
+
     public apply(
         filterManager: FilterSystem,
         input: Texture,
